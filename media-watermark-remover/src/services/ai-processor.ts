@@ -5,49 +5,67 @@ let isInitialized = false
 
 export async function initAIModel(): Promise<boolean> {
   if (isInitialized) return true
-  
-  try {
-    const hasWebGPU = !!(navigator as any).gpu
-    if (!hasWebGPU) return false
-    
-    ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/'
-    
-    session = await ort.InferenceSession.create('https://huggingface.co/ototadana/inpainting_lama/resolve/main/model.onnx', {
-      executionProviders: ['webgpu']
-    })
-    
-    isInitialized = true
-    return true
-  } catch (err) {
-    console.warn('AI model init failed, falling back to traditional:', err)
-    return false
+  if (!session) {
+    try {
+      const hasWebGPU = !!(navigator as any).gpu
+      if (!hasWebGPU) throw new Error('WebGPU 不支持')
+      
+      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/'
+      
+      session = await ort.InferenceSession.create('https://huggingface.co/ototadana/inpainting_lama/resolve/main/model.onnx', {
+        executionProviders: ['webgpu']
+      })
+      
+      isInitialized = true
+      return true
+    } catch (err) {
+      console.error('AI 模型初始化失败:', err)
+      session = null
+      isInitialized = false
+      return false
+    }
   }
+  return true
 }
 
 export async function inpaintAI(imageData: ImageData, maskData: ImageData): Promise<ImageData> {
-  if (!session) throw new Error('AI model not initialized')
+  if (!session) throw new Error('AI 模型未初始化')
   
-  const inputTensor = new ort.Tensor('float32', normalizeImage(imageData), [1, 4, imageData.height, imageData.width])
-  const maskTensor = new ort.Tensor('float32', normalizeMask(maskData), [1, 1, maskData.height, maskData.width])
+  // 确保尺寸是 8 的倍数（LaMa 模型要求）
+  const h = Math.floor(imageData.height / 8) * 8
+  const w = Math.floor(imageData.width / 8) * 8
+  
+  const inputTensor = new ort.Tensor('float32', normalizeImage(imageData, w, h), [1, 4, h, w])
+  const maskTensor = new ort.Tensor('float32', normalizeMask(maskData, w, h), [1, 1, h, w])
   
   const results = await session.run({ image: inputTensor, mask: maskTensor })
   const output = results.output!
   
-  return denormalizeOutput(output, imageData.width, imageData.height)
+  return denormalizeOutput(output, w, h)
 }
 
-function normalizeImage(imageData: ImageData): Float32Array {
-  const data = new Float32Array(imageData.width * imageData.height * 4)
-  for (let i = 0; i < imageData.data.length; i++) {
-    data[i] = imageData.data[i] / 255.0
+function normalizeImage(imageData: ImageData, w: number, h: number): Float32Array {
+  const data = new Float32Array(w * h * 4)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const srcIdx = (y * imageData.width + x) * 4
+      const destIdx = (y * w + x) * 4
+      data[destIdx] = imageData.data[srcIdx] / 255.0
+      data[destIdx + 1] = imageData.data[srcIdx + 1] / 255.0
+      data[destIdx + 2] = imageData.data[srcIdx + 2] / 255.0
+      data[destIdx + 3] = imageData.data[srcIdx + 3] / 255.0
+    }
   }
   return data
 }
 
-function normalizeMask(maskData: ImageData): Float32Array {
-  const data = new Float32Array(maskData.width * maskData.height)
-  for (let i = 0; i < maskData.data.length; i += 4) {
-    data[i / 4] = maskData.data[i] > 0 ? 1.0 : 0.0
+function normalizeMask(maskData: ImageData, w: number, h: number): Float32Array {
+  const data = new Float32Array(w * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const srcIdx = (y * imageData.width + x) * 4
+      data[y * w + x] = maskData.data[srcIdx] > 0 ? 1.0 : 0.0
+    }
   }
   return data
 }

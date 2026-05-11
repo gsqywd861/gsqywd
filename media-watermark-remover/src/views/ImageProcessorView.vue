@@ -29,8 +29,32 @@
         :regions="imageStore.watermarkRegions"
         @add="imageStore.addWatermarkRegion"
         @remove="imageStore.removeWatermarkRegion"
+        @update="updateRegion"
+        @select="selectRegion"
         @image-loaded="handleImageLoaded"
       />
+      
+      <div v-if="selectedRegionId && activeTab === 'watermark'" class="mt-4 p-4 bg-gray-50 rounded-lg space-y-4">
+        <h4 class="text-sm font-medium text-gray-900">区域微调</h4>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">X 坐标</label>
+            <input v-model.number="fineTune.x" type="range" min="0" :max="imageStore.imageInfo?.width || 1000" class="w-full" @input="applyFineTune" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">Y 坐标</label>
+            <input v-model.number="fineTune.y" type="range" min="0" :max="imageStore.imageInfo?.height || 1000" class="w-full" @input="applyFineTune" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">宽度</label>
+            <input v-model.number="fineTune.width" type="range" min="10" :max="(imageStore.imageInfo?.width || 1000) - fineTune.x" class="w-full" @input="applyFineTune" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-500 mb-1">高度</label>
+            <input v-model.number="fineTune.height" type="range" min="10" :max="(imageStore.imageInfo?.height || 1000) - fineTune.y" class="w-full" @input="applyFineTune" />
+          </div>
+        </div>
+      </div>
       
       <img
         v-else
@@ -194,12 +218,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useImageStore } from '@/stores/image'
 import { useTaskStore } from '@/stores/task'
 import FileUploader from '@/components/common/FileUploader.vue'
 import WatermarkSelector from '@/components/common/WatermarkSelector.vue'
 import { loadOpenCV, removeWatermarkTraditional, compressImage, enhanceSharpness } from '@/services/image-processor'
+import { initAIModel, inpaintAI } from '@/services/ai-processor'
 import { formatFileSize } from '@/utils/helpers'
 
 const imageStore = useImageStore()
@@ -207,6 +232,30 @@ const taskStore = useTaskStore()
 
 const activeTab = ref('watermark')
 const hasWebGPU = ref(false)
+const selectedRegionId = ref<string | null>(null)
+const fineTune = ref({ x: 0, y: 0, width: 0, height: 0 })
+
+function selectRegion(id: string | null) {
+  selectedRegionId.value = id
+  if (id) {
+    const region = imageStore.watermarkRegions.find(r => r.id === id)
+    if (region) {
+      fineTune.value = { x: region.x, y: region.y, width: region.width, height: region.height }
+    }
+  }
+}
+
+function updateRegion(region: typeof fineTune.value & { id: string }) {
+  const idx = imageStore.watermarkRegions.findIndex(r => r.id === region.id)
+  if (idx !== -1) {
+    imageStore.watermarkRegions[idx] = { ...region }
+  }
+}
+
+function applyFineTune() {
+  if (!selectedRegionId.value) return
+  updateRegion({ id: selectedRegionId.value, ...fineTune.value })
+}
 
 const tabs = [
   { id: 'watermark', name: '水印去除' },
@@ -301,15 +350,15 @@ async function processWatermark() {
     
     const maskData = maskCtx.createImageData(imageData.width, imageData.height)
     for (const region of imageStore.watermarkRegions) {
-      const scaleX = imageData.width / img.offsetWidth
-      const scaleY = imageData.height / img.offsetHeight
       for (let y = region.y; y < region.y + region.height; y++) {
         for (let x = region.x; x < region.x + region.width; x++) {
-          const idx = (y * imageData.width + x) * 4
-          maskData.data[idx] = 255
-          maskData.data[idx + 1] = 255
-          maskData.data[idx + 2] = 255
-          maskData.data[idx + 3] = 255
+          if (x >= 0 && x < imageData.width && y >= 0 && y < imageData.height) {
+            const idx = (y * imageData.width + x) * 4
+            maskData.data[idx] = 255
+            maskData.data[idx + 1] = 255
+            maskData.data[idx + 2] = 255
+            maskData.data[idx + 3] = 255
+          }
         }
       }
     }
@@ -317,11 +366,18 @@ async function processWatermark() {
     imageStore.progress = 50
     taskStore.updateTaskStatus(taskId, 'processing', 50)
     
-    const result = await removeWatermarkTraditional(
-      imageData,
-      maskData,
-      watermarkSettings.value.method
-    )
+    let result: ImageData
+    if (watermarkSettings.value.algorithm === 'ai' && hasWebGPU.value) {
+      const aiReady = await initAIModel()
+      if (!aiReady) throw new Error('AI 模型初始化失败，请确保浏览器支持 WebGPU 或切换至传统算法')
+      result = await inpaintAI(imageData, maskData)
+    } else {
+      result = await removeWatermarkTraditional(
+        imageData,
+        maskData,
+        watermarkSettings.value.method
+      )
+    }
     
     imageStore.progress = 90
     taskStore.updateTaskStatus(taskId, 'processing', 90)
