@@ -45,7 +45,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref } from 'vue'
 import { generateId } from '@/utils/helpers'
 
 interface Rect {
@@ -64,7 +64,7 @@ interface Region {
 }
 
 const props = defineProps<{
-  imageUrl: string
+  imageUrl: string | undefined
   regions: Region[]
 }>()
 

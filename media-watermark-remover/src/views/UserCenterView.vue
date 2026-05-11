@@ -26,10 +26,15 @@
           />
         </div>
         <button
-          class="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+          class="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          :disabled="userStore.isLoading"
           @click="handleLogin"
         >
-          登录
+          <svg v-if="userStore.isLoading" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          {{ userStore.isLoading ? '登录中...' : '登录' }}
         </button>
         <p class="text-center text-sm text-gray-600">
           还没有账号？
@@ -59,10 +64,15 @@
           />
         </div>
         <button
-          class="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          class="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          :disabled="userStore.isLoading"
           @click="handleRegister"
         >
-          注册
+          <svg v-if="userStore.isLoading" class="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          {{ userStore.isLoading ? '注册中...' : '注册' }}
         </button>
         <p class="text-center text-sm text-gray-600">
           已有账号？
@@ -161,59 +171,37 @@ const password = ref('')
 
 async function handleLogin() {
   if (!email.value || !password.value) {
-    userStore.setError('请填写邮箱和密码')
+    userStore.error = '请填写邮箱和密码'
     return
   }
   
-  userStore.isLoading = true
-  userStore.setError(null)
-  
   try {
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    userStore.setUser({
-      id: 'demo-user',
-      email: email.value,
-      createdAt: new Date(),
-      settings: userStore.defaultSettings
-    })
-  } catch (err) {
-    userStore.setError('登录失败，请重试')
-  } finally {
-    userStore.isLoading = false
+    await userStore.handleSignIn(email.value, password.value)
+  } catch {
+    // error already set in store
   }
 }
 
 async function handleRegister() {
   if (!email.value || !password.value) {
-    userStore.setError('请填写邮箱和密码')
+    userStore.error = '请填写邮箱和密码'
     return
   }
   
   if (password.value.length < 6) {
-    userStore.setError('密码至少 6 位')
+    userStore.error = '密码至少 6 位'
     return
   }
   
-  userStore.isLoading = true
-  userStore.setError(null)
-  
   try {
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    userStore.setUser({
-      id: 'demo-user',
-      email: email.value,
-      createdAt: new Date(),
-      settings: userStore.defaultSettings
-    })
-  } catch (err) {
-    userStore.setError('注册失败，请重试')
-  } finally {
-    userStore.isLoading = false
+    await userStore.handleSignUp(email.value, password.value)
+  } catch {
+    // error already set in store
   }
 }
 
 function handleLogout() {
-  userStore.clearUser()
+  userStore.handleSignOut()
 }
 
 function getTaskTypeName(type: ProcessingTask['type']): string {

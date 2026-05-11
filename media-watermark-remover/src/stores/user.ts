@@ -1,12 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { User, UserSettings } from '@/types'
+import { signUp, signIn, signOut, getCurrentUser, onAuthStateChange } from '@/services/auth'
 
 export const useUserStore = defineStore('user', () => {
   const user = ref<User | null>(null)
   const isAuthenticated = ref(false)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
+  let authSubscription: { unsubscribe: () => void } | null = null
 
   const defaultSettings: UserSettings = {
     preferredAlgorithm: 'ai',
@@ -14,14 +16,81 @@ export const useUserStore = defineStore('user', () => {
     defaultOutputQuality: 'high',
   }
 
-  function setUser(newUser: User) {
-    user.value = newUser
-    isAuthenticated.value = true
+  function initAuth() {
+    authSubscription = onAuthStateChange((authUser) => {
+      if (authUser) {
+        user.value = {
+          id: authUser.id,
+          email: authUser.email || '',
+          createdAt: new Date(authUser.created_at),
+          settings: defaultSettings,
+        }
+        isAuthenticated.value = true
+      } else {
+        user.value = null
+        isAuthenticated.value = false
+      }
+    })
+    getCurrentUser().then((authUser) => {
+      if (authUser) {
+        user.value = {
+          id: authUser.id,
+          email: authUser.email || '',
+          createdAt: new Date(authUser.created_at),
+          settings: defaultSettings,
+        }
+        isAuthenticated.value = true
+      }
+    })
   }
 
-  function clearUser() {
-    user.value = null
-    isAuthenticated.value = false
+  async function handleSignUp(email: string, password: string) {
+    isLoading.value = true
+    error.value = null
+    try {
+      const authUser = await signUp(email, password)
+      user.value = {
+        id: authUser.id,
+        email: authUser.email || '',
+        createdAt: new Date(authUser.created_at),
+        settings: defaultSettings,
+      }
+      isAuthenticated.value = true
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '注册失败'
+      throw err
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function handleSignIn(email: string, password: string) {
+    isLoading.value = true
+    error.value = null
+    try {
+      const authUser = await signIn(email, password)
+      user.value = {
+        id: authUser.id,
+        email: authUser.email || '',
+        createdAt: new Date(authUser.created_at),
+        settings: defaultSettings,
+      }
+      isAuthenticated.value = true
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '登录失败'
+      throw err
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  async function handleSignOut() {
+    try {
+      await signOut()
+    } finally {
+      user.value = null
+      isAuthenticated.value = false
+    }
   }
 
   function updateSettings(settings: Partial<UserSettings>) {
@@ -30,8 +99,8 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  function setError(msg: string | null) {
-    error.value = msg
+  function clearError() {
+    error.value = null
   }
 
   return {
@@ -40,9 +109,11 @@ export const useUserStore = defineStore('user', () => {
     isLoading,
     error,
     defaultSettings,
-    setUser,
-    clearUser,
+    initAuth,
+    handleSignUp,
+    handleSignIn,
+    handleSignOut,
     updateSettings,
-    setError,
+    clearError,
   }
 })
