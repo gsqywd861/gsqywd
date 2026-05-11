@@ -5,7 +5,7 @@ Updated: 2026-05-11
 
 ## Description
 
-基于客户端计算的在线媒体处理工具，利用用户设备的 WebGPU 算力进行视频和图片水印去除、图片压缩和清晰度增强。采用纯前端架构，所有媒体处理均在浏览器中完成，无需服务器 GPU 资源。支持可选用户注册登录，登录用户可保存处理历史记录。
+基于客户端计算的在线媒体处理工具，利用用户设备的 WebGPU 算力进行视频和图片水印去除、图片压缩和清晰度增强。采用纯前端架构，所有媒体处理均在浏览器中完成，无需服务器 GPU 资源。支持可选用户注册登录，登录用户可保存处理历史记录。系统完全支持移动端浏览器访问，提供响应式界面和触摸手势操作。
 
 ## Architecture
 
@@ -69,15 +69,17 @@ graph TD
 
 | 组件 | 职责 |
 |------|------|
-| `App.vue` | 根组件，路由布局 |
+| `App.vue` | 根组件，路由布局，响应式布局控制 |
 | `VideoProcessor.vue` | 视频水印去除主界面 |
 | `ImageProcessor.vue` | 图片处理主界面（水印/压缩/增强） |
-| `WatermarkSelector.vue` | 水印区域选择器（支持多区域） |
+| `WatermarkSelector.vue` | 水印区域选择器（支持多区域、触摸手势） |
 | `VideoPlayer.vue` | 视频预览播放器 |
 | `ImagePreview.vue` | 图片预览和对比组件 |
 | `TaskProgress.vue` | 处理进度显示 |
-| `FileUploader.vue` | 文件上传和 URL 输入 |
+| `FileUploader.vue` | 文件上传和 URL 输入（支持移动端相册/相机） |
 | `OutputSettings.vue` | 输出参数设置（分辨率/质量） |
+| `MobileToolbar.vue` | 移动端底部操作栏 |
+| `ResponsiveLayout.vue` | 响应式布局容器 |
 
 **状态管理（Pinia Stores）：**
 
@@ -190,8 +192,11 @@ interface AuthService {
   // 邮箱登录
   signIn(email: string, password: string): Promise<User>;
   
-  // 第三方登录（Google/GitHub）
+  // 第三方登录（Google/GitHub/Apple）
   signInWithProvider(provider: string): Promise<User>;
+  
+  // 手机号登录（短信验证码）
+  signInWithPhone(phone: string, code: string): Promise<User>;
   
   // 退出登录
   signOut(): Promise<void>;
@@ -318,10 +323,12 @@ class ErrorHandler {
 
 | 浏览器 | 最低版本 | 测试项 |
 |--------|----------|--------|
-| Chrome | 113+ | WebGPU、WebAssembly、IndexedDB |
-| Edge | 113+ | WebGPU、WebAssembly、IndexedDB |
-| Firefox | 120+ | WebGPU 实验性支持 |
-| Safari | 17.4+ | WebGPU 实验性支持（标记为不支持时禁用 AI） |
+| Chrome (Desktop) | 113+ | WebGPU、WebAssembly、IndexedDB |
+| Edge (Desktop) | 113+ | WebGPU、WebAssembly、IndexedDB |
+| Firefox (Desktop) | 120+ | WebGPU 实验性支持 |
+| Safari (Desktop) | 17.4+ | WebGPU 实验性支持（标记为不支持时禁用 AI） |
+| Safari (iOS) | 17.4+ | 响应式布局、触摸手势、文件选择 |
+| Chrome (Android) | 113+ | 响应式布局、触摸手势、文件选择 |
 
 ## Implementation Plan
 
@@ -351,7 +358,16 @@ class ErrorHandler {
 5. 实现视频重新编码和下载
 6. 实现处理进度显示和取消功能
 
-### Phase 4: 用户系统（预计 2 天）
+### Phase 4: 移动端适配（预计 2 天）
+
+1. 实现响应式布局（Tailwind CSS 断点适配）
+2. 添加触摸手势支持（vueuse/gesture）
+3. 实现移动端文件选择器（相册/相机集成）
+4. 优化移动端 UI 组件（底部导航、触摸友好的按钮尺寸）
+5. 测试移动端浏览器兼容性（iOS Safari、Android Chrome）
+6. 实现手机号短信验证码登录
+
+### Phase 5: 用户系统（预计 2 天）
 
 1. 集成 Supabase Auth
 2. 实现注册/登录/第三方登录
@@ -359,12 +375,12 @@ class ErrorHandler {
 4. 实现云端历史记录同步
 5. 实现用户设置管理
 
-### Phase 5: 优化与测试（预计 2 天）
+### Phase 6: 优化与测试（预计 2 天）
 
 1. 性能优化（Web Worker 并发处理）
 2. 内存管理优化（及时释放不再使用的帧）
 3. 错误处理和用户体验优化
-4. 浏览器兼容性测试
+4. 浏览器兼容性测试（含移动端）
 5. 端到端测试和修复
 
 ## References
