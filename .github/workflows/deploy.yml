@@ -1,0 +1,36 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: media-watermark-remover/package-lock.json
+
+      - name: Install dependencies
+        working-directory: media-watermark-remover
+        run: npm ci
+
+      - name: Build project
+        working-directory: media-watermark-remover
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: f7b557e9d4336308f80599c462c783a3
+          command: pages deploy media-watermark-remover/dist --project-name=gsqywd --branch=main
