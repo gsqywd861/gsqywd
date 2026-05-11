@@ -28,6 +28,10 @@ jobs:
         working-directory: media-watermark-remover
         run: npm run build
 
+      - name: Remove large WASM files (loaded from CDN)
+        working-directory: media-watermark-remover
+        run: find dist -name "*.wasm" -delete
+
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
