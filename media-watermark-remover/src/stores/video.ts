@@ -3,13 +3,14 @@ import { ref } from 'vue'
 import type { VideoInfo, WatermarkRegion } from '@/types'
 
 export const useVideoStore = defineStore('video', () => {
-  const videoFile = ref<File | null>(null)
+  const videoFile = ref<File>({} as File)
   const videoInfo = ref<VideoInfo | null>(null)
   const videoUrl = ref<string>('')
   const watermarkRegions = ref<WatermarkRegion[]>([])
   const isProcessing = ref(false)
   const progress = ref(0)
   const outputBlob = ref<Blob | null>(null)
+  const outputUrl = ref<string>('')
   const error = ref<string | null>(null)
 
   function setVideoFile(file: File, url: string) {
@@ -18,6 +19,7 @@ export const useVideoStore = defineStore('video', () => {
     videoInfo.value = null
     watermarkRegions.value = []
     outputBlob.value = null
+    outputUrl.value = ''
     error.value = null
   }
 
@@ -36,7 +38,7 @@ export const useVideoStore = defineStore('video', () => {
   function updateWatermarkRegion(id: string, updates: Partial<WatermarkRegion>) {
     const index = watermarkRegions.value.findIndex(r => r.id === id)
     if (index !== -1) {
-      watermarkRegions.value[index] = { ...watermarkRegions.value[index], ...updates }
+      watermarkRegions.value[index] = { ...watermarkRegions.value[index], ...updates } as WatermarkRegion
     }
   }
 
@@ -48,8 +50,11 @@ export const useVideoStore = defineStore('video', () => {
     progress.value = value
   }
 
-  function setOutputBlob(blob: Blob) {
+  function setOutputBlob(blob: Blob, url: string = '') {
     outputBlob.value = blob
+    outputUrl.value = url
+    isProcessing.value = false
+    progress.value = 100
   }
 
   function setError(msg: string | null) {
@@ -58,13 +63,14 @@ export const useVideoStore = defineStore('video', () => {
   }
 
   function reset() {
-    videoFile.value = null
+    videoFile.value = {} as File
     videoInfo.value = null
     videoUrl.value = ''
     watermarkRegions.value = []
     isProcessing.value = false
     progress.value = 0
     outputBlob.value = null
+    outputUrl.value = ''
     error.value = null
   }
 
@@ -76,6 +82,7 @@ export const useVideoStore = defineStore('video', () => {
     isProcessing,
     progress,
     outputBlob,
+    outputUrl,
     error,
     setVideoFile,
     setVideoInfo,

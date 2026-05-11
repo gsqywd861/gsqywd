@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import type { ImageInfo, WatermarkRegion } from '@/types'
 
 export const useImageStore = defineStore('image', () => {
-  const imageFile = ref<File | null>(null)
+  const imageFile = ref<File>({} as File)
   const imageUrl = ref<string>('')
   const imageInfo = ref<ImageInfo | null>(null)
   const watermarkRegions = ref<WatermarkRegion[]>([])
@@ -13,7 +13,7 @@ export const useImageStore = defineStore('image', () => {
   const outputUrl = ref<string>('')
   const error = ref<string | null>(null)
 
-  function setImageFile(file: File | null, url: string) {
+  function setImageFile(file: File, url: string) {
     imageFile.value = file
     imageUrl.value = url
     imageInfo.value = null
@@ -38,7 +38,7 @@ export const useImageStore = defineStore('image', () => {
   function updateWatermarkRegion(id: string, updates: Partial<WatermarkRegion>) {
     const index = watermarkRegions.value.findIndex(r => r.id === id)
     if (index !== -1) {
-      watermarkRegions.value[index] = { ...watermarkRegions.value[index], ...updates }
+      watermarkRegions.value[index] = { ...watermarkRegions.value[index], ...updates } as WatermarkRegion
     }
   }
 
@@ -50,9 +50,11 @@ export const useImageStore = defineStore('image', () => {
     progress.value = value
   }
 
-  function setOutputBlob(blob: Blob, url: string) {
+  function setOutputBlob(blob: Blob, url: string = '') {
     outputBlob.value = blob
     outputUrl.value = url
+    isProcessing.value = false
+    progress.value = 100
   }
 
   function setError(msg: string | null) {
@@ -61,7 +63,7 @@ export const useImageStore = defineStore('image', () => {
   }
 
   function reset() {
-    imageFile.value = null
+    imageFile.value = {} as File
     imageUrl.value = ''
     imageInfo.value = null
     watermarkRegions.value = []

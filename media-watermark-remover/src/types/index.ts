@@ -12,14 +12,14 @@ export interface VideoInfo {
   duration: number
   codec: string
   fps: number
-  file: File
+  file: File | undefined
 }
 
 export interface ImageInfo {
   width: number
   height: number
   format: 'jpg' | 'png' | 'webp'
-  file: File | null
+  file: File | undefined
   url: string | null
 }
 

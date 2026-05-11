@@ -1,0 +1,115 @@
+let cvReady = false
+let cvPromise: Promise<void> | null = null
+
+export function loadOpenCV(): Promise<void> {
+  if (cvReady) return Promise.resolve()
+  if (cvPromise) return cvPromise
+
+  cvPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = 'https://docs.opencv.org/4.x/opencv.js'
+    script.async = true
+    script.onload = () => {
+      const checkCv = () => {
+        if ((window as any).cv?.onRuntimeInitialized) {
+          (window as any).cv.onRuntimeInitialized = () => {
+            cvReady = true
+            resolve()
+          }
+        } else if ((window as any).cv?.Mat) {
+          cvReady = true
+          resolve()
+        } else {
+          setTimeout(checkCv, 100)
+        }
+      }
+      checkCv()
+    }
+    script.onerror = () => reject(new Error('Failed to load OpenCV.js'))
+    document.head.appendChild(script)
+  })
+
+  return cvPromise
+}
+
+export function getCv(): any {
+  if (!cvReady) throw new Error('OpenCV.js not loaded')
+  return (window as any).cv
+}
+
+export async function removeWatermarkTraditional(
+  imageData: ImageData,
+  maskData: ImageData,
+  method: 'telea' | 'ns' = 'telea'
+): Promise<ImageData> {
+  const cv = getCv()
+  
+  const src = cv.matFromImageData(imageData)
+  const mask = cv.matFromImageData(maskData)
+  const dst = new cv.Mat()
+  
+  const maskGray = new cv.Mat()
+  cv.cvtColor(mask, maskGray, cv.COLOR_RGBA2GRAY)
+  
+  const inpaintMethod = method === 'telea' ? cv.INPAINT_TELEA : cv.INPAINT_NS
+  cv.inpaint(src, maskGray, dst, 3, inpaintMethod)
+  
+  const result = new ImageData(dst.cols, dst.rows)
+  result.data.set(new Uint8ClampedArray(dst.data))
+  
+  src.delete()
+  mask.delete()
+  maskGray.delete()
+  dst.delete()
+  
+  return result
+}
+
+export async function compressImage(
+  imageData: ImageData,
+  quality: number,
+  format: 'jpeg' | 'png' = 'jpeg'
+): Promise<Blob> {
+  const canvas = document.createElement('canvas')
+  canvas.width = imageData.width
+  canvas.height = imageData.height
+  
+  const ctx = canvas.getContext('2d')!
+  ctx.putImageData(imageData, 0, 0)
+  
+  return new Promise((resolve) => {
+    canvas.toBlob(
+      (blob) => resolve(blob!),
+      `image/${format}`,
+      quality / 100
+    )
+  })
+}
+
+export async function enhanceSharpness(
+  imageData: ImageData,
+  strength: number = 1
+): Promise<ImageData> {
+  const cv = getCv()
+  
+  const src = cv.matFromImageData(imageData)
+  const dst = new cv.Mat()
+  
+  const kernel = cv.Mat.eye(3, 3, cv.CV_32F)
+  const kernelData = new Float32Array(9)
+  kernelData[0] = 0; kernelData[1] = -strength; kernelData[2] = 0
+  kernelData[3] = -strength; kernelData[4] = 1 + 4 * strength; kernelData[5] = -strength
+  kernelData[6] = 0; kernelData[7] = -strength; kernelData[8] = 0
+  kernel.data.set(kernelData)
+  
+  cv.filter2D(src, dst, cv.CV_8U, kernel)
+  
+  const result = new ImageData(dst.cols, dst.rows)
+  result.data.set(new Uint8ClampedArray(dst.data))
+  
+  src.delete()
+  dst.delete()
+  kernel.delete()
+  
+  return result
+}

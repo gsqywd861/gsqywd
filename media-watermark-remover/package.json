@@ -15,6 +15,9 @@
     "lint:eslint": "eslint . --fix --cache"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
+    "onnxruntime-web": "^1.26.0",
     "pinia": "^3.0.4",
     "vue": "^3.5.32",
     "vue-router": "^5.0.4"
