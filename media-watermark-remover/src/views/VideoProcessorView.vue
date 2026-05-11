@@ -362,6 +362,8 @@ async function processVideo() {
     
     taskStore.setTaskOutput(taskId, blob, `processed_${videoStore.videoFile!.name}`)
     taskStore.updateTaskStatus(taskId, 'completed', 100)
+    
+    autoDownload(blob, `processed_${videoStore.videoFile!.name}`)
   } catch (err) {
     videoStore.error = err instanceof Error ? err.message : '处理失败'
     videoStore.progress = 0
@@ -379,6 +381,17 @@ function downloadResult() {
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
+}
+
+function autoDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 

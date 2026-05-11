@@ -397,6 +397,8 @@ async function processWatermark() {
     
     taskStore.setTaskOutput(taskId, blob, 'processed.png')
     taskStore.updateTaskStatus(taskId, 'completed', 100)
+    
+    autoDownload(blob, 'watermark_removed')
   } catch (err) {
     imageStore.error = err instanceof Error ? err.message : '处理失败'
     imageStore.progress = 0
@@ -512,5 +514,16 @@ function downloadResult() {
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
+}
+
+function autoDownload(blob: Blob, prefix: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${prefix}_${Date.now()}.png`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 </script>
