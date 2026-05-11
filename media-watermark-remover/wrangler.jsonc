@@ -6,16 +6,8 @@
     "enabled": true
   },
   "assets": {
-    "not_found_handling": "single-page-application",
-    "headers": [
-      {
-        "path": "/*",
-        "headers": {
-          "Cross-Origin-Opener-Policy": "same-origin",
-          "Cross-Origin-Embedder-Policy": "require-corp"
-        }
-      }
-    ]
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
   },
   "compatibility_flags": [
     "nodejs_compat"
