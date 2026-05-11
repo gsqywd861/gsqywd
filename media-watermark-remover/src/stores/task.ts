@@ -70,6 +70,19 @@ export const useTaskStore = defineStore('task', () => {
     tasks.value = tasks.value.filter(t => t.status !== 'completed')
   }
 
+  function deleteTask(id: string) {
+    const task = tasks.value.find(t => t.id === id)
+    if (task?.outputBlob) {
+      URL.revokeObjectURL(URL.createObjectURL(task.outputBlob))
+    }
+    removeTask(id)
+  }
+
+  function clearAllTasks() {
+    tasks.value = []
+    activeTaskId.value = null
+  }
+
   return {
     tasks,
     activeTaskId,
@@ -79,6 +92,8 @@ export const useTaskStore = defineStore('task', () => {
     getTask,
     getActiveTask,
     removeTask,
+    deleteTask,
     clearCompletedTasks,
+    clearAllTasks,
   }
 })

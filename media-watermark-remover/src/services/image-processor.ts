@@ -18,7 +18,12 @@ export function loadOpenCV(): Promise<void> {
     
     return new Promise((resolve, reject) => {
       const script = document.createElement('script')
-      script.src = OPENCV_CDN_URLS[index]
+      const url = OPENCV_CDN_URLS[index]
+      if (!url) {
+        reject(new Error('OpenCV.js 加载失败，请检查网络连接'))
+        return
+      }
+      script.src = url
       script.async = true
       
       script.onload = () => {
@@ -87,7 +92,7 @@ export async function removeWatermarkTraditional(
 export async function compressImage(
   imageData: ImageData,
   quality: number,
-  format: 'jpeg' | 'png' = 'jpeg'
+  format: 'jpeg' | 'png' | 'webp' = 'jpeg'
 ): Promise<Blob> {
   const canvas = document.createElement('canvas')
   canvas.width = imageData.width
@@ -96,11 +101,14 @@ export async function compressImage(
   const ctx = canvas.getContext('2d')!
   ctx.putImageData(imageData, 0, 0)
   
+  const mimeType = format === 'png' ? 'image/png' : format === 'webp' ? 'image/webp' : 'image/jpeg'
+  const q = format === 'png' ? undefined : quality / 100
+  
   return new Promise((resolve) => {
     canvas.toBlob(
       (blob) => resolve(blob!),
-      `image/${format}`,
-      quality / 100
+      mimeType,
+      q
     )
   })
 }

@@ -26,6 +26,15 @@
           </svg>
           图片处理
         </RouterLink>
+        <RouterLink
+          to="/batch"
+          class="px-8 py-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-lg font-medium inline-flex items-center justify-center gap-2"
+        >
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+          批量处理
+        </RouterLink>
       </div>
     </section>
     
@@ -37,7 +46,7 @@
           </svg>
         </div>
         <h3 class="text-xl font-semibold text-gray-900 mb-2">视频水印去除</h3>
-        <p class="text-gray-600">支持 MP4、MOV 格式，多区域选择，智能修复水印区域</p>
+        <p class="text-gray-600">支持 MP4、MOV、WebM 等格式，时间轴片段选择，多区域水印处理</p>
       </div>
       
       <div class="bg-white rounded-xl shadow-sm border p-6">
@@ -46,18 +55,18 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         </div>
-        <h3 class="text-xl font-semibold text-gray-900 mb-2">图片水印去除</h3>
-        <p class="text-gray-600">支持 JPG、PNG 格式，AI 智能修复或传统算法可选</p>
+        <h3 class="text-xl font-semibold text-gray-900 mb-2">图片处理</h3>
+        <p class="text-gray-600">支持 JPG、PNG、WebP、GIF，前后对比预览，AI 智能修复</p>
       </div>
       
       <div class="bg-white rounded-xl shadow-sm border p-6">
         <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
           <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
         </div>
-        <h3 class="text-xl font-semibold text-gray-900 mb-2">图片压缩 & 增强</h3>
-        <p class="text-gray-600">智能压缩图片大小，增强图片清晰度，质量可控</p>
+        <h3 class="text-xl font-semibold text-gray-900 mb-2">批量处理</h3>
+        <p class="text-gray-600">一次处理多个文件，共享水印区域设置，打包 ZIP 下载</p>
       </div>
     </section>
     

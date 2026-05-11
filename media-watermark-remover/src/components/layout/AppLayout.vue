@@ -26,6 +26,20 @@
               图片处理
             </RouterLink>
             <RouterLink
+              to="/batch"
+              class="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50 transition-colors"
+              active-class="text-indigo-600 bg-indigo-50"
+            >
+              批量处理
+            </RouterLink>
+            <RouterLink
+              to="/history"
+              class="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50 transition-colors"
+              active-class="text-indigo-600 bg-indigo-50"
+            >
+              处理历史
+            </RouterLink>
+            <RouterLink
               to="/user"
               class="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50 transition-colors"
               active-class="text-indigo-600 bg-indigo-50"
@@ -60,6 +74,20 @@
             @click="mobileMenuOpen = false"
           >
             图片处理
+          </RouterLink>
+          <RouterLink
+            to="/batch"
+            class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50"
+            @click="mobileMenuOpen = false"
+          >
+            批量处理
+          </RouterLink>
+          <RouterLink
+            to="/history"
+            class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50"
+            @click="mobileMenuOpen = false"
+          >
+            处理历史
           </RouterLink>
           <RouterLink
             to="/user"

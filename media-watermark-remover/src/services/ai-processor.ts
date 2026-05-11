@@ -53,27 +53,29 @@ export async function inpaintAI(imageData: ImageData, maskData: ImageData): Prom
   return denormalizeOutput(output, w, h)
 }
 
-function normalizeImage(imageData: ImageData, w: number, h: number): Float32Array {
+function normalizeImage(imgData: ImageData, w: number, h: number): Float32Array {
   const data = new Float32Array(w * h * 4)
+  const src = imgData.data
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const srcIdx = (y * imageData.width + x) * 4
+      const srcIdx = (y * imgData.width + x) * 4
       const destIdx = (y * w + x) * 4
-      data[destIdx] = imageData.data[srcIdx] / 255.0
-      data[destIdx + 1] = imageData.data[srcIdx + 1] / 255.0
-      data[destIdx + 2] = imageData.data[srcIdx + 2] / 255.0
-      data[destIdx + 3] = imageData.data[srcIdx + 3] / 255.0
+      data[destIdx] = src[srcIdx]! / 255.0
+      data[destIdx + 1] = src[srcIdx + 1]! / 255.0
+      data[destIdx + 2] = src[srcIdx + 2]! / 255.0
+      data[destIdx + 3] = src[srcIdx + 3]! / 255.0
     }
   }
   return data
 }
 
-function normalizeMask(maskData: ImageData, w: number, h: number): Float32Array {
+function normalizeMask(mData: ImageData, w: number, h: number): Float32Array {
   const data = new Float32Array(w * h)
+  const src = mData.data
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const srcIdx = (y * imageData.width + x) * 4
-      data[y * w + x] = maskData.data[srcIdx] > 0 ? 1.0 : 0.0
+      const srcIdx = (y * mData.width + x) * 4
+      data[y * w + x] = src[srcIdx]! > 0 ? 1.0 : 0.0
     }
   }
   return data
@@ -81,10 +83,11 @@ function normalizeMask(maskData: ImageData, w: number, h: number): Float32Array 
 
 function denormalizeOutput(tensor: any, width: number, height: number): ImageData {
   const result = new ImageData(width, height)
-  const data = tensor.data as Float32Array
+  const srcData = tensor.data as Float32Array
+  const dest = result.data
   
-  for (let i = 0; i < result.data.length; i++) {
-    result.data[i] = Math.min(255, Math.max(0, data[i] * 255))
+  for (let i = 0; i < dest.length; i++) {
+    dest[i] = Math.min(255, Math.max(0, srcData[i]! * 255))
   }
   
   return result

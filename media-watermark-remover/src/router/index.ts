@@ -20,6 +20,16 @@ const router = createRouter({
       component: () => import('../views/ImageProcessorView.vue'),
     },
     {
+      path: '/batch',
+      name: 'batch-processor',
+      component: () => import('../views/BatchProcessorView.vue'),
+    },
+    {
+      path: '/history',
+      name: 'processing-history',
+      component: () => import('../views/HistoryView.vue'),
+    },
+    {
       path: '/user',
       name: 'user-center',
       component: () => import('../views/UserCenterView.vue'),
