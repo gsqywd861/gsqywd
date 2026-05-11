@@ -180,6 +180,7 @@ import { useTaskStore } from '@/stores/task'
 import FileUploader from '@/components/common/FileUploader.vue'
 import { getVideoInfo, processVideo as processVideoService } from '@/services/video-processor'
 import { generateId } from '@/utils/helpers'
+import { showToast } from '@/composables/useToast'
 
 const videoStore = useVideoStore()
 const taskStore = useTaskStore()
@@ -363,10 +364,12 @@ async function processVideo() {
     taskStore.setTaskOutput(taskId, blob, `processed_${videoStore.videoFile!.name}`)
     taskStore.updateTaskStatus(taskId, 'completed', 100)
     
-    autoDownload(blob, `processed_${videoStore.videoFile!.name}`)
+    showToast('视频处理完成！', 'success')
+    autoSaveOrNotify(blob, `processed_${videoStore.videoFile!.name}`)
   } catch (err) {
     videoStore.error = err instanceof Error ? err.message : '处理失败'
     videoStore.progress = 0
+    showToast(videoStore.error, 'error')
   } finally {
     videoStore.isProcessing = false
   }
@@ -383,15 +386,36 @@ function downloadResult() {
   document.body.removeChild(a)
 }
 
-function autoDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+async function autoSaveOrNotify(blob: Blob, filename: string) {
+  try {
+    if ('showSaveFilePicker' in window) {
+      const handle = await (window as any).showSaveFilePicker({
+        suggestedName: filename,
+        types: [{
+          description: 'Video File',
+          accept: { 'video/mp4': ['.mp4'] },
+        }],
+      })
+      const writable = await handle.createWritable()
+      await writable.write(blob)
+      await writable.close()
+      showToast('已保存到本地', 'success')
+    } else {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      showToast('处理完成，请查看下载内容', 'info')
+    }
+  } catch (err: any) {
+    if (err.name !== 'AbortError') {
+      showToast('保存失败，请点击下载按钮手动保存', 'error')
+    }
+  }
 }
 
 

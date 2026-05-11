@@ -226,6 +226,7 @@ import WatermarkSelector from '@/components/common/WatermarkSelector.vue'
 import { loadOpenCV, removeWatermarkTraditional, compressImage, enhanceSharpness } from '@/services/image-processor'
 import { initAIModel, inpaintAI } from '@/services/ai-processor'
 import { formatFileSize } from '@/utils/helpers'
+import { showToast } from '@/composables/useToast'
 
 const imageStore = useImageStore()
 const taskStore = useTaskStore()
@@ -398,10 +399,12 @@ async function processWatermark() {
     taskStore.setTaskOutput(taskId, blob, 'processed.png')
     taskStore.updateTaskStatus(taskId, 'completed', 100)
     
-    autoDownload(blob, 'watermark_removed')
+    showToast('水印去除完成！', 'success')
+    autoSaveOrNotify(blob, 'watermark_removed.png')
   } catch (err) {
     imageStore.error = err instanceof Error ? err.message : '处理失败'
     imageStore.progress = 0
+    showToast(imageStore.error, 'error')
   } finally {
     imageStore.isProcessing = false
   }
@@ -445,6 +448,7 @@ async function processCompress() {
   } catch (err) {
     imageStore.error = err instanceof Error ? err.message : '压缩失败'
     imageStore.progress = 0
+    showToast(imageStore.error, 'error')
   } finally {
     imageStore.isProcessing = false
   }
@@ -500,6 +504,7 @@ async function processEnhance() {
   } catch (err) {
     imageStore.error = err instanceof Error ? err.message : '增强失败'
     imageStore.progress = 0
+    showToast(imageStore.error, 'error')
   } finally {
     imageStore.isProcessing = false
   }
@@ -516,14 +521,35 @@ function downloadResult() {
   document.body.removeChild(a)
 }
 
-function autoDownload(blob: Blob, prefix: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${prefix}_${Date.now()}.png`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+async function autoSaveOrNotify(blob: Blob, filename: string) {
+  try {
+    if ('showSaveFilePicker' in window) {
+      const handle = await (window as any).showSaveFilePicker({
+        suggestedName: filename,
+        types: [{
+          description: 'Image File',
+          accept: { 'image/png': ['.png'] },
+        }],
+      })
+      const writable = await handle.createWritable()
+      await writable.write(blob)
+      await writable.close()
+      showToast('已保存到本地', 'success')
+    } else {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      showToast('处理完成，请查看下载内容', 'info')
+    }
+  } catch (err: any) {
+    if (err.name !== 'AbortError') {
+      showToast('保存失败，请点击下载按钮手动保存', 'error')
+    }
+  }
 }
 </script>
