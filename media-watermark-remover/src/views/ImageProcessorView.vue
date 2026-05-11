@@ -92,9 +92,9 @@
                 class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="traditional">传统算法 (OpenCV)</option>
-                <option value="ai" :disabled="!hasWebGPU">AI 智能修复 (WebGPU)</option>
+                <option value="ai">AI 智能修复 (WebGPU)</option>
               </select>
-              <p v-if="!hasWebGPU" class="mt-1 text-xs text-gray-500">AI 算法需要支持 WebGPU 的浏览器</p>
+              <p v-if="!hasWebGPU" class="mt-1 text-xs text-orange-500">AI 算法需要 Chrome 113+ 且启用 WebGPU，否则将自动回退到传统算法</p>
             </div>
             <div v-if="watermarkSettings.algorithm === 'traditional'">
               <label class="block text-sm font-medium text-gray-700 mb-2">修复方法</label>
@@ -285,10 +285,10 @@ const enhanceSettings = ref({
 })
 
 onMounted(() => {
+  // Check for WebGPU support
   hasWebGPU.value = !!(navigator as any).gpu
-  if (hasWebGPU.value) {
-    watermarkSettings.value.algorithm = 'ai'
-  }
+  // Default to traditional since AI needs specific browser support
+  watermarkSettings.value.algorithm = 'traditional'
 })
 
 async function handleFileSelected(files: File[]) {

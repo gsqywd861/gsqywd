@@ -1,34 +1,53 @@
 let cvReady = false
 let cvPromise: Promise<void> | null = null
 
+const OPENCV_CDN_URLS = [
+  'https://cdn.jsdelivr.net/npm/opencv.js@1.2.1/opencv.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.5.5/opencv.js',
+  'https://unpkg.com/opencv.js@1.2.1/opencv.js',
+]
+
 export function loadOpenCV(): Promise<void> {
   if (cvReady) return Promise.resolve()
   if (cvPromise) return cvPromise
 
-  cvPromise = new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = 'https://docs.opencv.org/4.x/opencv.js'
-    script.async = true
-    script.onload = () => {
-      const checkCv = () => {
-        if ((window as any).cv?.onRuntimeInitialized) {
-          (window as any).cv.onRuntimeInitialized = () => {
+  async function tryLoadUrl(index: number): Promise<void> {
+    if (index >= OPENCV_CDN_URLS.length) {
+      throw new Error('OpenCV.js 加载失败，请检查网络连接')
+    }
+    
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = OPENCV_CDN_URLS[index]
+      script.async = true
+      
+      script.onload = () => {
+        const checkCv = () => {
+          if ((window as any).cv?.onRuntimeInitialized) {
+            (window as any).cv.onRuntimeInitialized = () => {
+              cvReady = true
+              resolve()
+            }
+          } else if ((window as any).cv?.Mat) {
             cvReady = true
             resolve()
+          } else {
+            setTimeout(checkCv, 100)
           }
-        } else if ((window as any).cv?.Mat) {
-          cvReady = true
-          resolve()
-        } else {
-          setTimeout(checkCv, 100)
         }
+        checkCv()
       }
-      checkCv()
-    }
-    script.onerror = () => reject(new Error('Failed to load OpenCV.js'))
-    document.head.appendChild(script)
-  })
+      
+      script.onerror = () => {
+        console.warn(`OpenCV CDN ${index} failed, trying next...`)
+        tryLoadUrl(index + 1).then(resolve, reject)
+      }
+      
+      document.head.appendChild(script)
+    })
+  }
 
+  cvPromise = tryLoadUrl(0)
   return cvPromise
 }
 

@@ -1,36 +1,37 @@
 <template>
-  <div class="relative select-none bg-gray-100 rounded-lg overflow-hidden" @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp" @mouseleave="onMouseUp" @touchstart.prevent="onTouchStart" @touchmove.prevent="onTouchMove" @touchend.prevent="onTouchEnd">
+  <div ref="containerRef" class="relative select-none bg-gray-100 rounded-lg overflow-hidden">
     <img
       ref="imageRef"
       :src="imageUrl || ''"
-      class="max-w-full h-auto block pointer-events-none"
+      class="max-w-full h-auto block"
       @load="onImageLoad"
     />
     
-    <!-- Existing Regions -->
+    <!-- Regions -->
     <div
       v-for="region in regions"
       :key="region.id"
-      class="absolute border-2 border-dashed border-yellow-400 bg-yellow-400/20 cursor-grab active:cursor-grabbing group"
-      :class="{ 'ring-2 ring-blue-500 ring-offset-1': selectedId === region.id }"
+      class="absolute border-2 border-dashed border-yellow-400 bg-yellow-400/20 group"
+      :class="{ 'ring-2 ring-blue-500 ring-offset-1 cursor-grabbing': selectedId === region.id, 'cursor-grab': selectedId !== region.id }"
       :style="{
         left: `${px(region.x)}px`,
         top: `${py(region.y)}px`,
         width: `${pw(region.width)}px`,
         height: `${ph(region.height)}px`
       }"
-      @mousedown.stop="startDrag($event, region.id)"
+      @mousedown.stop="onRegionMouseDown($event, region.id)"
     >
-      <!-- Resize Handles (visible when selected) -->
-      <div v-if="selectedId === region.id" class="absolute inset-0 pointer-events-none">
-        <div class="absolute -top-2 -left-2 w-5 h-5 bg-blue-500 border-2 border-white rounded-full cursor-nwse-resize pointer-events-auto" @mousedown.stop="startResize($event, region.id, 'nw')"></div>
-        <div class="absolute -top-2 -right-2 w-5 h-5 bg-blue-500 border-2 border-white rounded-full cursor-nesw-resize pointer-events-auto" @mousedown.stop="startResize($event, region.id, 'ne')"></div>
-        <div class="absolute -bottom-2 -left-2 w-5 h-5 bg-blue-500 border-2 border-white rounded-full cursor-nesw-resize pointer-events-auto" @mousedown.stop="startResize($event, region.id, 'sw')"></div>
-        <div class="absolute -bottom-2 -right-2 w-5 h-5 bg-blue-500 border-2 border-white rounded-full cursor-nwse-resize pointer-events-auto" @mousedown.stop="startResize($event, region.id, 'se')"></div>
+      <!-- Resize Handles -->
+      <div v-if="selectedId === region.id" class="absolute inset-0">
+        <div class="absolute -top-2.5 -left-2.5 w-5 h-5 bg-blue-500 border-2 border-white rounded-full cursor-nwse-resize" @mousedown.stop="onResizeMouseDown($event, region.id, 'nw')"></div>
+        <div class="absolute -top-2.5 -right-2.5 w-5 h-5 bg-blue-500 border-2 border-white rounded-full cursor-nesw-resize" @mousedown.stop="onResizeMouseDown($event, region.id, 'ne')"></div>
+        <div class="absolute -bottom-2.5 -left-2.5 w-5 h-5 bg-blue-500 border-2 border-white rounded-full cursor-nesw-resize" @mousedown.stop="onResizeMouseDown($event, region.id, 'sw')"></div>
+        <div class="absolute -bottom-2.5 -right-2.5 w-5 h-5 bg-blue-500 border-2 border-white rounded-full cursor-nwse-resize" @mousedown.stop="onResizeMouseDown($event, region.id, 'se')"></div>
       </div>
       
+      <!-- Delete Button -->
       <button
-        class="absolute -top-3 -right-3 w-6 h-6 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center hover:bg-red-600 z-10 pointer-events-auto"
+        class="absolute -top-3 -right-3 w-7 h-7 bg-red-500 text-white rounded-full text-sm flex items-center justify-center hover:bg-red-600 z-10 shadow-md"
         @click.stop="emit('remove', region.id)"
       >
         ×
@@ -50,14 +51,14 @@
     ></div>
     
     <!-- Hint -->
-    <div class="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded pointer-events-none">
+    <div class="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded pointer-events-none select-none">
       拖拽画面选择水印区域
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { generateId } from '@/utils/helpers'
 
 export interface Region {
@@ -81,12 +82,14 @@ const emit = defineEmits<{
   'image-loaded': [info: { width: number; height: number }]
 }>()
 
+const containerRef = ref<HTMLDivElement | null>(null)
 const imageRef = ref<HTMLImageElement | null>(null)
-const containerRect = ref({ left: 0, top: 0, width: 0, height: 0 })
 
 // Scale factors
 const sx = ref(1)
 const sy = ref(1)
+const natW = ref(1)
+const natH = ref(1)
 
 // Drawing state
 const isDrawing = ref(false)
@@ -101,69 +104,72 @@ const dragOffset = ref({ x: 0, y: 0 })
 const resizeHandle = ref('')
 const resizeStart = ref({ x: 0, y: 0, rx: 0, ry: 0, rw: 0, rh: 0 })
 
-// Pixel conversion helpers
 function px(val: number) { return val * sx.value }
 function py(val: number) { return val * sy.value }
 function pw(val: number) { return val * sx.value }
 function ph(val: number) { return val * sy.value }
-
-function updateContainerRect() {
-  if (!imageRef.value) return
-  const rect = imageRef.value.getBoundingClientRect()
-  containerRect.value = { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-}
 
 function onImageLoad() {
   if (!imageRef.value) return
   const { naturalWidth, naturalHeight, clientWidth, clientHeight } = imageRef.value
   sx.value = clientWidth / naturalWidth
   sy.value = clientHeight / naturalHeight
-  updateContainerRect()
+  natW.value = naturalWidth
+  natH.value = naturalHeight
   emit('image-loaded', { width: naturalWidth, height: naturalHeight })
 }
 
-function getPos(e: MouseEvent | Touch) {
-  const rect = imageRef.value!.getBoundingClientRect()
+function getContainerPos(e: MouseEvent) {
+  const rect = containerRef.value!.getBoundingClientRect()
   return {
     x: Math.max(0, Math.min(e.clientX - rect.left, rect.width)),
     y: Math.max(0, Math.min(e.clientY - rect.top, rect.height))
   }
 }
 
-function onMouseDown(e: MouseEvent) {
+// Container mouse down (for drawing new regions)
+function onContainerMouseDown(e: MouseEvent) {
   if (e.button !== 0) return
+  // Only start drawing if we're not clicking on a region
+  const target = e.target as HTMLElement
+  if (target.closest('[data-region]')) return
+  
   mode.value = 'draw'
   isDrawing.value = true
   selectedId.value = null
   emit('select', null)
-  startPoint.value = getPos(e)
+  startPoint.value = getContainerPos(e)
   currentRect.value = null
 }
 
-function startDrag(e: MouseEvent, id: string) {
+function onRegionMouseDown(e: MouseEvent, id: string) {
   if (e.button !== 0) return
   selectedId.value = id
   emit('select', id)
   mode.value = 'drag'
-  const pos = getPos(e)
+  const pos = getContainerPos(e)
   const region = props.regions.find(r => r.id === id)!
   dragOffset.value = { x: pos.x - region.x * sx.value, y: pos.y - region.y * sy.value }
 }
 
-function startResize(e: MouseEvent, id: string, handle: string) {
+function onResizeMouseDown(e: MouseEvent, id: string, handle: string) {
+  if (e.button !== 0) return
   selectedId.value = id
   emit('select', id)
   mode.value = 'resize'
   resizeHandle.value = handle
-  const pos = getPos(e)
-  resizeStart.value = { x: pos.x, y: pos.y, rx: 0, ry: 0, rw: 0, rh: 0 }
-  
+  const pos = getContainerPos(e)
   const region = props.regions.find(r => r.id === id)!
-  resizeStart.value = { x: pos.x, y: pos.y, rx: region.x, ry: region.y, rw: region.width, rh: region.height }
+  resizeStart.value = {
+    x: pos.x, y: pos.y,
+    rx: region.x, ry: region.y,
+    rw: region.width, rh: region.height
+  }
 }
 
 function onMouseMove(e: MouseEvent) {
-  const pos = getPos(e)
+  if (!containerRef.value) return
+  const pos = getContainerPos(e)
   
   if (mode.value === 'draw' && startPoint.value) {
     const x = Math.min(startPoint.value.x, pos.x)
@@ -177,8 +183,8 @@ function onMouseMove(e: MouseEvent) {
     let newY = (pos.y - dragOffset.value.y) / sy.value
     
     // Clamp to image bounds
-    newX = Math.max(0, Math.min(newX, imageRef.value!.naturalWidth - region.width))
-    newY = Math.max(0, Math.min(newY, imageRef.value!.naturalHeight - region.height))
+    newX = Math.max(0, Math.min(newX, natW.value - region.width))
+    newY = Math.max(0, Math.min(newY, natH.value - region.height))
     
     emit('update', { ...region, x: Math.round(newX), y: Math.round(newY) })
   } else if (mode.value === 'resize' && selectedId.value) {
@@ -194,6 +200,7 @@ function onMouseMove(e: MouseEvent) {
     if (resizeHandle.value.includes('s')) newH = orig.rh + dy
     if (resizeHandle.value.includes('n')) { newH = orig.rh - dy; newY = orig.ry + dy }
     
+    // Minimum size 20px in natural coordinates
     if (newW > 20 && newH > 20) {
       emit('update', { ...region, x: Math.round(newX), y: Math.round(newY), width: Math.round(newW), height: Math.round(newH) })
     }
@@ -201,14 +208,13 @@ function onMouseMove(e: MouseEvent) {
 }
 
 function onMouseUp() {
-  if (mode.value === 'draw' && currentRect.value && currentRect.value.width > 10 && currentRect.value.height > 10) {
-    const scale = imageRef.value!.naturalWidth / containerRect.value.width
+  if (mode.value === 'draw' && currentRect.value && currentRect.value.width > 20 && currentRect.value.height > 20) {
     const region = {
       id: generateId(),
-      x: Math.round(currentRect.value.x * scale),
-      y: Math.round(currentRect.value.y * scale),
-      width: Math.round(currentRect.value.width * scale),
-      height: Math.round(currentRect.value.height * scale)
+      x: Math.round(currentRect.value.x / sx.value),
+      y: Math.round(currentRect.value.y / sy.value),
+      width: Math.round(currentRect.value.width / sx.value),
+      height: Math.round(currentRect.value.height / sy.value)
     }
     emit('add', region)
     selectedId.value = region.id
@@ -221,19 +227,20 @@ function onMouseUp() {
   currentRect.value = null
 }
 
-function onTouchStart(e: TouchEvent) {
-  const touch = e.touches[0]
-  if (!touch) return
-  onMouseDown({ button: 0, clientX: touch.clientX, clientY: touch.clientY } as MouseEvent)
-}
+// Global event listeners for mouse move/up (handles dragging outside container)
+onMounted(() => {
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+  if (containerRef.value) {
+    containerRef.value.addEventListener('mousedown', onContainerMouseDown)
+  }
+})
 
-function onTouchMove(e: TouchEvent) {
-  const touch = e.touches[0]
-  if (!touch) return
-  onMouseMove({ clientX: touch.clientX, clientY: touch.clientY } as MouseEvent)
-}
-
-function onTouchEnd() {
-  onMouseUp()
-}
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onMouseMove)
+  window.removeEventListener('mouseup', onMouseUp)
+  if (containerRef.value) {
+    containerRef.value.removeEventListener('mousedown', onContainerMouseDown)
+  }
+})
 </script>

@@ -22,73 +22,76 @@
         </button>
       </div>
       
-      <div class="relative select-none" @mousedown="startVideoSelection" @mousemove="handleVideoSelection" @mouseup="endVideoSelection">
+      <!-- Video Container with Selection Overlay -->
+      <div ref="videoContainerRef" class="relative select-none bg-black rounded-lg overflow-hidden" @mousedown="onContainerMouseDown">
         <video
           ref="videoRef"
           :src="videoStore.outputUrl || videoStore.videoUrl || ''"
-          class="max-w-full h-auto rounded-lg"
+          class="max-w-full h-auto block"
           controls
           @loadedmetadata="onVideoLoaded"
         ></video>
         
+        <!-- Selection Overlay (transparent layer for drawing) -->
+        <div class="absolute inset-0 cursor-crosshair" :class="{ 'pointer-events-none': isPlaying }"></div>
+        
+        <!-- Regions -->
         <div
           v-for="region in videoStore.watermarkRegions"
           :key="region.id"
-          class="absolute border-2 border-dashed border-blue-500 bg-blue-500/10 cursor-move group"
-          :class="{ 'ring-2 ring-indigo-500 ring-offset-2': selectedRegionId === region.id }"
-          :style="{
-            left: `${(region.x / videoWidth) * 100}%`,
-            top: `${(region.y / videoHeight) * 100}%`,
-            width: `${(region.width / videoWidth) * 100}%`,
-            height: `${(region.height / videoHeight) * 100}%`
-          }"
-          @mousedown.stop="startDragVideo($event, region.id)"
+          class="absolute border-2 border-dashed border-yellow-400 bg-yellow-400/20 group"
+          :class="{ 'ring-2 ring-blue-500 ring-offset-1 cursor-grabbing': selectedRegionId === region.id, 'cursor-grab': selectedRegion !== region.id }"
+          :style="getRegionStyle(region)"
+          @mousedown.stop="onRegionMouseDown($event, region.id)"
         >
+          <!-- Resize Handles -->
           <div v-if="selectedRegionId === region.id" class="absolute inset-0">
-            <div class="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-blue-500 rounded-full cursor-nw-resize" @mousedown.stop="startResizeVideo($event, region.id, 'nw')"></div>
-            <div class="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-blue-500 rounded-full cursor-ne-resize" @mousedown.stop="startResizeVideo($event, region.id, 'ne')"></div>
-            <div class="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-blue-500 rounded-full cursor-sw-resize" @mousedown.stop="startResizeVideo($event, region.id, 'sw')"></div>
-            <div class="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-blue-500 rounded-full cursor-se-resize" @mousedown.stop="startResizeVideo($event, region.id, 'se')"></div>
+            <div class="absolute -top-2.5 -left-2.5 w-5 h-5 bg-blue-500 border-2 border-white rounded-full cursor-nwse-resize" @mousedown.stop="onResizeMouseDown($event, region.id, 'nw')"></div>
+            <div class="absolute -top-2.5 -right-2.5 w-5 h-5 bg-blue-500 border-2 border-white rounded-full cursor-nesw-resize" @mousedown.stop="onResizeMouseDown($event, region.id, 'ne')"></div>
+            <div class="absolute -bottom-2.5 -left-2.5 w-5 h-5 bg-blue-500 border-2 border-white rounded-full cursor-nesw-resize" @mousedown.stop="onResizeMouseDown($event, region.id, 'sw')"></div>
+            <div class="absolute -bottom-2.5 -right-2.5 w-5 h-5 bg-blue-500 border-2 border-white rounded-full cursor-nwse-resize" @mousedown.stop="onResizeMouseDown($event, region.id, 'se')"></div>
           </div>
           
+          <!-- Delete Button -->
           <button
-            class="absolute -top-3 -right-3 w-6 h-6 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center hover:bg-red-600 z-10"
-            @click.stop="videoStore.removeWatermarkRegion(region.id)"
+            class="absolute -top-3 -right-3 w-7 h-7 bg-red-500 text-white rounded-full text-sm flex items-center justify-center hover:bg-red-600 z-10 shadow-md"
+            @click.stop="removeRegion(region.id)"
           >
             ×
           </button>
         </div>
         
+        <!-- Drawing Rect -->
         <div
-          v-if="isVideoDrawing && videoCurrentRect"
-          class="absolute border-2 border-dashed border-green-500 bg-green-500/10"
-          :style="{
-            left: `${videoCurrentRect.x}%`,
-            top: `${videoCurrentRect.y}%`,
-            width: `${videoCurrentRect.width}%`,
-            height: `${videoCurrentRect.height}%`
-          }"
+          v-if="isDrawing && currentRect"
+          class="absolute border-2 border-dashed border-blue-500 bg-blue-500/20 pointer-events-none"
+          :style="currentRectStyle"
         ></div>
+        
+        <div class="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded pointer-events-none select-none">
+          拖拽画面选择水印区域
+        </div>
       </div>
       
+      <!-- Fine Tuning -->
       <div v-if="selectedRegionId" class="mt-4 p-4 bg-gray-50 rounded-lg space-y-4">
         <h4 class="text-sm font-medium text-gray-900">区域微调</h4>
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-xs text-gray-500 mb-1">X 坐标</label>
-            <input v-model.number="videoFineTune.x" type="range" min="0" :max="videoWidth - videoFineTune.width" class="w-full" @input="applyVideoFineTune" />
+            <input v-model.number="fineTune.x" type="range" min="0" :max="videoWidth - fineTune.width" class="w-full" @input="applyFineTune" />
           </div>
           <div>
             <label class="block text-xs text-gray-500 mb-1">Y 坐标</label>
-            <input v-model.number="videoFineTune.y" type="range" min="0" :max="videoHeight - videoFineTune.height" class="w-full" @input="applyVideoFineTune" />
+            <input v-model.number="fineTune.y" type="range" min="0" :max="videoHeight - fineTune.height" class="w-full" @input="applyFineTune" />
           </div>
           <div>
             <label class="block text-xs text-gray-500 mb-1">宽度</label>
-            <input v-model.number="videoFineTune.width" type="range" min="10" :max="videoWidth - videoFineTune.x" class="w-full" @input="applyVideoFineTune" />
+            <input v-model.number="fineTune.width" type="range" min="20" :max="videoWidth - fineTune.x" class="w-full" @input="applyFineTune" />
           </div>
           <div>
             <label class="block text-xs text-gray-500 mb-1">高度</label>
-            <input v-model.number="videoFineTune.height" type="range" min="10" :max="videoHeight - videoFineTune.y" class="w-full" @input="applyVideoFineTune" />
+            <input v-model.number="fineTune.height" type="range" min="20" :max="videoHeight - fineTune.y" class="w-full" @input="applyFineTune" />
           </div>
         </div>
       </div>
@@ -96,26 +99,47 @@
     
     <div v-if="videoStore.videoUrl" class="bg-white rounded-xl shadow-sm border">
       <div class="p-6 space-y-6">
+        <!-- Processing Mode -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">处理模式</label>
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2">
+              <input v-model="processMode" type="radio" value="full" class="text-indigo-600" />
+              <span class="text-sm">整个视频去水印</span>
+            </label>
+            <label class="flex items-center gap-2">
+              <input v-model="processMode" type="radio" value="partial" class="text-indigo-600" />
+              <span class="text-sm">部分片段去水印</span>
+            </label>
+          </div>
+        </div>
+        
+        <!-- Time Range (for partial mode) -->
+        <div v-if="processMode === 'partial'" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">开始时间 (秒)</label>
+            <input v-model.number="timeRange.start" type="number" min="0" :max="timeRange.end" step="0.1" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">结束时间 (秒)</label>
+            <input v-model.number="timeRange.end" type="number" :min="timeRange.start" :max="videoDuration" step="0.1" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+        </div>
+        
+        <!-- Output Settings -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">输出分辨率</label>
-            <select
-              v-model="outputSettings.resolution"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
+            <select v-model="outputSettings.resolution" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
               <option value="original">原始分辨率</option>
               <option value="1080p">1080p</option>
               <option value="720p">720p</option>
               <option value="480p">480p</option>
             </select>
           </div>
-          
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">输出质量</label>
-            <select
-              v-model="outputSettings.quality"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
+            <select v-model="outputSettings.quality" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
               <option value="high">高质量</option>
               <option value="medium">中等质量</option>
               <option value="low">低质量</option>
@@ -123,20 +147,22 @@
           </div>
         </div>
         
+        <!-- Region Count -->
         <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
           <div>
             <p class="text-sm font-medium text-gray-900">已选择 {{ videoStore.watermarkRegions.length }} 个水印区域</p>
-            <p class="text-xs text-gray-500 mt-1">在视频预览上点击可添加区域</p>
+            <p class="text-xs text-gray-500 mt-1">在视频预览上拖拽可添加区域</p>
           </div>
           <button
             v-if="videoStore.watermarkRegions.length > 0"
             class="text-sm text-red-600 hover:text-red-700"
-            @click="videoStore.clearWatermarkRegions"
+            @click="clearRegions"
           >
             清空
           </button>
         </div>
         
+        <!-- Process Button -->
         <button
           class="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           :disabled="videoStore.watermarkRegions.length === 0 || videoStore.isProcessing"
@@ -151,22 +177,19 @@
       </div>
     </div>
     
+    <!-- Progress -->
     <div v-if="videoStore.progress > 0 && videoStore.progress < 100" class="bg-white rounded-xl shadow-sm border p-6">
       <div class="flex justify-between text-sm text-gray-600 mb-2">
         <span>处理进度</span>
         <span>{{ Math.round(videoStore.progress) }}%</span>
       </div>
       <div class="w-full bg-gray-200 rounded-full h-3">
-        <div
-          class="bg-indigo-600 h-3 rounded-full transition-all duration-300"
-          :style="{ width: `${videoStore.progress}%` }"
-        ></div>
+        <div class="bg-indigo-600 h-3 rounded-full transition-all duration-300" :style="{ width: `${videoStore.progress}%` }"></div>
       </div>
-      <p class="mt-2 text-xs text-gray-500">
-        视频处理可能需要较长时间，请保持页面打开
-      </p>
+      <p class="mt-2 text-xs text-gray-500">视频处理可能需要较长时间，请保持页面打开</p>
     </div>
     
+    <!-- Error -->
     <div v-if="videoStore.error" class="bg-red-50 border border-red-200 rounded-xl p-4">
       <p class="text-sm text-red-600">{{ videoStore.error }}</p>
     </div>
@@ -174,7 +197,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useVideoStore } from '@/stores/video'
 import { useTaskStore } from '@/stores/task'
 import FileUploader from '@/components/common/FileUploader.vue'
@@ -186,133 +209,193 @@ const videoStore = useVideoStore()
 const taskStore = useTaskStore()
 
 const videoRef = ref<HTMLVideoElement | null>(null)
+const videoContainerRef = ref<HTMLDivElement | null>(null)
 const videoWidth = ref(1920)
 const videoHeight = ref(1080)
-const selectedRegionId = ref<string | null>(null)
-const videoFineTune = ref({ x: 0, y: 0, width: 0, height: 0 })
+const videoDuration = ref(0)
+const isPlaying = ref(false)
 
-// Video selection state
-const isVideoDrawing = ref(false)
-const videoStartPoint = ref<{ x: number; y: number } | null>(null)
-const videoCurrentRect = ref<{ x: number; y: number; width: number; height: number } | null>(null)
-const videoMode = ref<'none' | 'draw' | 'drag' | 'resize'>('none')
-const videoDragOffset = ref({ x: 0, y: 0 })
-const videoResizeHandle = ref('')
-const videoInitialRect = ref<any>(null)
-const videoInitialPoint = ref({ x: 0, y: 0 })
+const processMode = ref<'full' | 'partial'>('full')
+const timeRange = ref({ start: 0, end: 30 })
 
 const outputSettings = ref({
   resolution: 'original' as 'original' | '1080p' | '720p' | '480p',
   quality: 'high' as 'high' | 'medium' | 'low'
 })
 
-function getVideoRelativePos(e: MouseEvent) {
-  const rect = videoRef.value!.getBoundingClientRect()
+// Selection state
+const selectedRegionId = ref<string | null>(null)
+const fineTune = ref({ x: 0, y: 0, width: 0, height: 0 })
+const isDrawing = ref(false)
+const startPoint = ref<{ x: number; y: number } | null>(null)
+const currentRect = ref<{ x: number; y: number; width: number; height: number } | null>(null)
+const displayW = ref(0)
+const displayH = ref(0)
+
+// Interaction state
+type Mode = 'none' | 'draw' | 'drag' | 'resize'
+const mode = ref<Mode>('none')
+const dragOffset = ref({ x: 0, y: 0 })
+const resizeHandle = ref('')
+const resizeStart = ref({ x: 0, y: 0, rx: 0, ry: 0, rw: 0, rh: 0 })
+
+const currentRectStyle = computed(() => {
+  if (!currentRect.value) return {}
   return {
-    x: ((e.clientX - rect.left) / rect.width) * 100,
-    y: ((e.clientY - rect.top) / rect.height) * 100
+    left: `${currentRect.value.x}px`,
+    top: `${currentRect.value.y}px`,
+    width: `${currentRect.value.width}px`,
+    height: `${currentRect.value.height}px`
+  }
+})
+
+function getRegionStyle(region: any) {
+  const scaleX = displayW.value / videoWidth.value
+  const scaleY = displayH.value / videoHeight.value
+  return {
+    left: `${region.x * scaleX}px`,
+    top: `${region.y * scaleY}px`,
+    width: `${region.width * scaleX}px`,
+    height: `${region.height * scaleY}px`
   }
 }
 
-function startVideoSelection(e: MouseEvent) {
+function getContainerPos(e: MouseEvent) {
+  const rect = videoContainerRef.value!.getBoundingClientRect()
+  return {
+    x: Math.max(0, Math.min(e.clientX - rect.left, rect.width)),
+    y: Math.max(0, Math.min(e.clientY - rect.top, rect.height))
+  }
+}
+
+function onContainerMouseDown(e: MouseEvent) {
   if (e.button !== 0) return
-  videoMode.value = 'draw'
-  isVideoDrawing.value = true
-  videoStartPoint.value = getVideoRelativePos(e)
-  videoCurrentRect.value = null
+  const target = e.target as HTMLElement
+  if (target.closest('[data-region]') || target.tagName === 'VIDEO') return
+  
+  mode.value = 'draw'
+  isDrawing.value = true
+  selectedRegionId.value = null
+  startPoint.value = getContainerPos(e)
+  currentRect.value = null
 }
 
-function handleVideoSelection(e: MouseEvent) {
-  if (videoMode.value === 'draw' && videoStartPoint.value) {
-    const pos = getVideoRelativePos(e)
-    const x = Math.min(videoStartPoint.value.x, pos.x)
-    const y = Math.min(videoStartPoint.value.y, pos.y)
-    const width = Math.abs(pos.x - videoStartPoint.value.x)
-    const height = Math.abs(pos.y - videoStartPoint.value.y)
-    if (width > 1 && height > 1) {
-      videoCurrentRect.value = { x, y, width, height }
-    }
-  } else if (videoMode.value === 'drag' && selectedRegionId.value) {
-    const pos = getVideoRelativePos(e)
+function onRegionMouseDown(e: MouseEvent, id: string) {
+  if (e.button !== 0) return
+  selectedRegionId.value = id
+  mode.value = 'drag'
+  const pos = getContainerPos(e)
+  const region = videoStore.watermarkRegions.find(r => r.id === id)!
+  const scaleX = displayW.value / videoWidth.value
+  const scaleY = displayH.value / videoHeight.value
+  dragOffset.value = { x: pos.x - region.x * scaleX, y: pos.y - region.y * scaleY }
+  fineTune.value = { x: region.x, y: region.y, width: region.width, height: region.height }
+}
+
+function onResizeMouseDown(e: MouseEvent, id: string, handle: string) {
+  if (e.button !== 0) return
+  selectedRegionId.value = id
+  mode.value = 'resize'
+  resizeHandle.value = handle
+  const pos = getContainerPos(e)
+  const region = videoStore.watermarkRegions.find(r => r.id === id)!
+  const scaleX = displayW.value / videoWidth.value
+  const scaleY = displayH.value / videoHeight.value
+  resizeStart.value = {
+    x: pos.x, y: pos.y,
+    rx: region.x, ry: region.y,
+    rw: region.width, rh: region.height
+  }
+  fineTune.value = { x: region.x, y: region.y, width: region.width, height: region.height }
+}
+
+function onMouseMove(e: MouseEvent) {
+  if (!videoContainerRef.value) return
+  const pos = getContainerPos(e)
+  const scaleX = displayW.value / videoWidth.value
+  const scaleY = displayH.value / videoHeight.value
+  
+  if (mode.value === 'draw' && startPoint.value) {
+    const x = Math.min(startPoint.value.x, pos.x)
+    const y = Math.min(startPoint.value.y, pos.y)
+    const width = Math.abs(pos.x - startPoint.value.x)
+    const height = Math.abs(pos.y - startPoint.value.y)
+    currentRect.value = { x, y, width, height }
+  } else if (mode.value === 'drag' && selectedRegionId.value) {
     const region = videoStore.watermarkRegions.find(r => r.id === selectedRegionId.value)!
-    let newX = pos.x - videoDragOffset.value.x
-    let newY = pos.y - videoDragOffset.value.y
-    newX = Math.max(0, Math.min(newX, 100 - region.width))
-    newY = Math.max(0, Math.min(newY, 100 - region.height))
+    let newX = (pos.x - dragOffset.value.x) / scaleX
+    let newY = (pos.y - dragOffset.value.y) / scaleY
+    newX = Math.max(0, Math.min(newX, videoWidth.value - region.width))
+    newY = Math.max(0, Math.min(newY, videoHeight.value - region.height))
     
-    const updated = { ...region, x: (newX / 100) * videoWidth.value, y: (newY / 100) * videoHeight.value }
     const idx = videoStore.watermarkRegions.findIndex(r => r.id === selectedRegionId.value)
-    if (idx !== -1) videoStore.watermarkRegions[idx] = updated
-    videoFineTune.value = { x: updated.x, y: updated.y, width: updated.width, height: updated.height }
-  } else if (videoMode.value === 'resize' && selectedRegionId.value && videoInitialRect.value) {
-    const pos = getVideoRelativePos(e)
-    const dx = pos.x - videoInitialPoint.value.x
-    const dy = pos.y - videoInitialPoint.value.y
-    const orig = videoInitialRect.value
-    let newX = orig.x, newY = orig.y, newW = orig.width, newH = orig.height
+    if (idx !== -1) {
+      videoStore.watermarkRegions[idx] = { ...region, x: Math.round(newX), y: Math.round(newY) }
+    }
+    fineTune.value = { x: Math.round(newX), y: Math.round(newY), width: region.width, height: region.height }
+  } else if (mode.value === 'resize' && selectedRegionId.value) {
+    const dx = (pos.x - resizeStart.value.x) / scaleX
+    const dy = (pos.y - resizeStart.value.y) / scaleY
+    const orig = resizeStart.value
+    const region = videoStore.watermarkRegions.find(r => r.id === selectedRegionId.value)!
     
-    if (videoResizeHandle.value.includes('e')) newW = orig.width + dx
-    if (videoResizeHandle.value.includes('w')) { newW = orig.width - dx; newX = orig.x + dx }
-    if (videoResizeHandle.value.includes('s')) newH = orig.height + dy
-    if (videoResizeHandle.value.includes('n')) { newH = orig.height - dy; newY = orig.y + dy }
+    let newX = orig.rx, newY = orig.ry, newW = orig.rw, newH = orig.rh
+    if (resizeHandle.value.includes('e')) newW = orig.rw + dx
+    if (resizeHandle.value.includes('w')) { newW = orig.rw - dx; newX = orig.rx + dx }
+    if (resizeHandle.value.includes('s')) newH = orig.rh + dy
+    if (resizeHandle.value.includes('n')) { newH = orig.rh - dy; newY = orig.ry + dy }
     
-    if (newW > 2 && newH > 2) {
-      const updated = { ...orig, x: newX, y: newY, width: newW, height: newH }
-      const region = videoStore.watermarkRegions.find(r => r.id === selectedRegionId.value)!
-      const final = { ...region, x: (newX / 100) * videoWidth.value, y: (newY / 100) * videoHeight.value, width: (newW / 100) * videoWidth.value, height: (newH / 100) * videoHeight.value }
+    if (newW > 20 && newH > 20) {
       const idx = videoStore.watermarkRegions.findIndex(r => r.id === selectedRegionId.value)
-      if (idx !== -1) videoStore.watermarkRegions[idx] = final
-      videoFineTune.value = { x: final.x, y: final.y, width: final.width, height: final.height }
+      if (idx !== -1) {
+        videoStore.watermarkRegions[idx] = { ...region, x: Math.round(newX), y: Math.round(newY), width: Math.round(newW), height: Math.round(newH) }
+      }
+      fineTune.value = { x: Math.round(newX), y: Math.round(newY), width: Math.round(newW), height: Math.round(newH) }
     }
   }
 }
 
-function endVideoSelection() {
-  if (videoMode.value === 'draw' && videoCurrentRect.value) {
-    const rect = videoCurrentRect.value
+function onMouseUp() {
+  if (mode.value === 'draw' && currentRect.value && currentRect.value.width > 20 && currentRect.value.height > 20) {
+    const scaleX = displayW.value / videoWidth.value
+    const scaleY = displayH.value / videoHeight.value
     const region = {
       id: generateId(),
-      x: Math.round((rect.x / 100) * videoWidth.value),
-      y: Math.round((rect.y / 100) * videoHeight.value),
-      width: Math.round((rect.width / 100) * videoWidth.value),
-      height: Math.round((rect.height / 100) * videoHeight.value)
+      x: Math.round(currentRect.value.x / scaleX),
+      y: Math.round(currentRect.value.y / scaleY),
+      width: Math.round(currentRect.value.width / scaleX),
+      height: Math.round(currentRect.value.height / scaleY)
     }
     videoStore.addWatermarkRegion(region)
     selectedRegionId.value = region.id
-    videoFineTune.value = { x: region.x, y: region.y, width: region.width, height: region.height }
+    fineTune.value = { x: region.x, y: region.y, width: region.width, height: region.height }
+    showToast(`已添加水印区域 ${videoStore.watermarkRegions.length}`, 'success')
   }
-  videoMode.value = 'none'
-  isVideoDrawing.value = false
-  videoStartPoint.value = null
-  videoCurrentRect.value = null
+  
+  mode.value = 'none'
+  isDrawing.value = false
+  startPoint.value = null
+  currentRect.value = null
 }
 
-function startDragVideo(e: MouseEvent, id: string) {
-  if (e.button !== 0) return
-  selectedRegionId.value = id
-  videoMode.value = 'drag'
-  const pos = getVideoRelativePos(e)
-  const region = videoStore.watermarkRegions.find(r => r.id === id)!
-  videoDragOffset.value = { x: pos.x - (region.x / videoWidth.value) * 100, y: pos.y - (region.y / videoHeight.value) * 100 }
-  videoFineTune.value = { x: region.x, y: region.y, width: region.width, height: region.height }
-}
-
-function startResizeVideo(e: MouseEvent, id: string, handle: string) {
-  selectedRegionId.value = id
-  videoMode.value = 'resize'
-  videoResizeHandle.value = handle
-  videoInitialPoint.value = getVideoRelativePos(e)
-  const region = videoStore.watermarkRegions.find(r => r.id === id)!
-  videoInitialRect.value = { x: (region.x / videoWidth.value) * 100, y: (region.y / videoHeight.value) * 100, width: (region.width / videoWidth.value) * 100, height: (region.height / videoHeight.value) * 100 }
-  videoFineTune.value = { x: region.x, y: region.y, width: region.width, height: region.height }
-}
-
-function applyVideoFineTune() {
+function applyFineTune() {
   if (!selectedRegionId.value) return
   const idx = videoStore.watermarkRegions.findIndex(r => r.id === selectedRegionId.value)
   if (idx !== -1) {
-    videoStore.watermarkRegions[idx] = { id: selectedRegionId.value, ...videoFineTune.value }
+    videoStore.watermarkRegions[idx] = { id: selectedRegionId.value, ...fineTune.value }
   }
+}
+
+function removeRegion(id: string) {
+  videoStore.removeWatermarkRegion(id)
+  if (selectedRegionId.value === id) {
+    selectedRegionId.value = null
+  }
+}
+
+function clearRegions() {
+  videoStore.clearWatermarkRegions()
+  selectedRegionId.value = null
 }
 
 function handleFileSelected(files: File[]) {
@@ -321,15 +404,25 @@ function handleFileSelected(files: File[]) {
   if (!file) return
   const url = URL.createObjectURL(file)
   videoStore.setVideoFile(file, url)
+  videoStore.clearWatermarkRegions()
 }
 
 async function onVideoLoaded() {
   if (!videoRef.value || !videoStore.videoFile) return
-  
   const info = await getVideoInfo(videoStore.videoFile)
   videoStore.setVideoInfo({ ...info, file: videoStore.videoFile })
   videoWidth.value = info.width
   videoHeight.value = info.height
+  videoDuration.value = info.duration || 0
+  timeRange.value = { start: 0, end: info.duration || 0 }
+  
+  // Get actual display size
+  requestAnimationFrame(() => {
+    if (videoRef.value) {
+      displayW.value = videoRef.value.clientWidth
+      displayH.value = videoRef.value.clientHeight
+    }
+  })
 }
 
 async function processVideo() {
@@ -340,17 +433,23 @@ async function processVideo() {
   videoStore.error = null
   
   try {
-    const videoFile = videoStore.videoFile
     const taskId = taskStore.createTask('video-watermark', videoStore.videoFile.name)
     taskStore.updateTaskStatus(taskId, 'processing', 10)
     
+    const options: any = {
+      watermarkRegions: videoStore.watermarkRegions,
+      outputResolution: outputSettings.value.resolution,
+      outputQuality: outputSettings.value.quality
+    }
+    
+    if (processMode.value === 'partial') {
+      options.startTime = timeRange.value.start
+      options.endTime = timeRange.value.end
+    }
+    
     const blob = await processVideoService(
-      videoFile,
-      {
-        watermarkRegions: videoStore.watermarkRegions,
-        outputResolution: outputSettings.value.resolution,
-        outputQuality: outputSettings.value.quality
-      },
+      videoStore.videoFile,
+      options,
       (progress) => {
         videoStore.progress = progress
         taskStore.updateTaskStatus(taskId, 'processing', progress)
@@ -377,7 +476,6 @@ async function processVideo() {
 
 function downloadResult() {
   if (!videoStore.outputBlob) return
-  
   const a = document.createElement('a')
   a.href = URL.createObjectURL(videoStore.outputBlob)
   a.download = `processed_${Date.now()}.mp4`
@@ -386,7 +484,7 @@ function downloadResult() {
   document.body.removeChild(a)
 }
 
-async function autoSave(blob: Blob, filename: string) {
+function autoSave(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -397,5 +495,13 @@ async function autoSave(blob: Blob, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+onMounted(() => {
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+})
 
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onMouseMove)
+  window.removeEventListener('mouseup', onMouseUp)
+})
 </script>

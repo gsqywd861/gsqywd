@@ -1,7 +1,14 @@
-import * as ort from 'onnxruntime-web'
+// AI processing service - loads onnxruntime-web dynamically to avoid bundling large WASM files
 
-let session: ort.InferenceSession | null = null
+let ort: any = null
+let session: any = null
 let isInitialized = false
+
+async function loadOrt(): Promise<void> {
+  if (ort) return
+  const module = await import('onnxruntime-web')
+  ort = module
+}
 
 export async function initAIModel(): Promise<boolean> {
   if (isInitialized) return true
@@ -9,6 +16,8 @@ export async function initAIModel(): Promise<boolean> {
     try {
       const hasWebGPU = !!(navigator as any).gpu
       if (!hasWebGPU) throw new Error('WebGPU 不支持')
+      
+      await loadOrt()
       
       ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/'
       
@@ -31,7 +40,7 @@ export async function initAIModel(): Promise<boolean> {
 export async function inpaintAI(imageData: ImageData, maskData: ImageData): Promise<ImageData> {
   if (!session) throw new Error('AI 模型未初始化')
   
-  // 确保尺寸是 8 的倍数（LaMa 模型要求）
+  // Ensure dimensions are multiples of 8 (LaMa model requirement)
   const h = Math.floor(imageData.height / 8) * 8
   const w = Math.floor(imageData.width / 8) * 8
   
@@ -70,7 +79,7 @@ function normalizeMask(maskData: ImageData, w: number, h: number): Float32Array 
   return data
 }
 
-function denormalizeOutput(tensor: ort.Tensor, width: number, height: number): ImageData {
+function denormalizeOutput(tensor: any, width: number, height: number): ImageData {
   const result = new ImageData(width, height)
   const data = tensor.data as Float32Array
   
