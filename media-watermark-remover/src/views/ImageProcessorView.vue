@@ -324,17 +324,19 @@ async function processWatermark() {
   imageStore.error = null
   
   try {
-    const file = imageStore.imageFile
-    const fileName = file?.name || 'url-image'
-    const taskId = taskStore.createTask('image-watermark', fileName)
+    const taskId = taskStore.createTask('image-watermark', imageStore.imageFile?.name || 'image')
     taskStore.updateTaskStatus(taskId, 'processing', 10)
     
-    await loadOpenCV()
+    // Load OpenCV only for traditional algorithm
+    if (watermarkSettings.value.algorithm === 'traditional') {
+      await loadOpenCV()
+    }
     taskStore.updateTaskStatus(taskId, 'processing', 30)
     
     const img = new Image()
+    img.crossOrigin = 'anonymous'
     img.src = imageStore.imageUrl
-    await new Promise((resolve) => { img.onload = resolve })
+    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject })
     
     const canvas = document.createElement('canvas')
     canvas.width = img.naturalWidth
@@ -351,15 +353,19 @@ async function processWatermark() {
     
     const maskData = maskCtx.createImageData(imageData.width, imageData.height)
     for (const region of imageStore.watermarkRegions) {
-      for (let y = region.y; y < region.y + region.height; y++) {
-        for (let x = region.x; x < region.x + region.width; x++) {
-          if (x >= 0 && x < imageData.width && y >= 0 && y < imageData.height) {
-            const idx = (y * imageData.width + x) * 4
-            maskData.data[idx] = 255
-            maskData.data[idx + 1] = 255
-            maskData.data[idx + 2] = 255
-            maskData.data[idx + 3] = 255
-          }
+      // Clamp region to image bounds
+      const rx = Math.max(0, Math.min(region.x, imageData.width - 1))
+      const ry = Math.max(0, Math.min(region.y, imageData.height - 1))
+      const rw = Math.min(region.width, imageData.width - rx)
+      const rh = Math.min(region.height, imageData.height - ry)
+      
+      for (let y = ry; y < ry + rh; y++) {
+        for (let x = rx; x < rx + rw; x++) {
+          const idx = (y * imageData.width + x) * 4
+          maskData.data[idx] = 255
+          maskData.data[idx + 1] = 255
+          maskData.data[idx + 2] = 255
+          maskData.data[idx + 3] = 255
         }
       }
     }
@@ -370,7 +376,7 @@ async function processWatermark() {
     let result: ImageData
     if (watermarkSettings.value.algorithm === 'ai' && hasWebGPU.value) {
       const aiReady = await initAIModel()
-      if (!aiReady) throw new Error('AI 模型初始化失败，请确保浏览器支持 WebGPU 或切换至传统算法')
+      if (!aiReady) throw new Error('AI 模型初始化失败，请切换至传统算法')
       result = await inpaintAI(imageData, maskData)
     } else {
       result = await removeWatermarkTraditional(
@@ -399,8 +405,8 @@ async function processWatermark() {
     taskStore.setTaskOutput(taskId, blob, 'processed.png')
     taskStore.updateTaskStatus(taskId, 'completed', 100)
     
-    showToast('水印去除完成！', 'success')
-    autoSaveOrNotify(blob, 'watermark_removed.png')
+    showToast('水印去除完成，已自动保存', 'success')
+    autoSave(blob, 'watermark_removed.png')
   } catch (err) {
     imageStore.error = err instanceof Error ? err.message : '处理失败'
     imageStore.progress = 0
@@ -521,35 +527,14 @@ function downloadResult() {
   document.body.removeChild(a)
 }
 
-async function autoSaveOrNotify(blob: Blob, filename: string) {
-  try {
-    if ('showSaveFilePicker' in window) {
-      const handle = await (window as any).showSaveFilePicker({
-        suggestedName: filename,
-        types: [{
-          description: 'Image File',
-          accept: { 'image/png': ['.png'] },
-        }],
-      })
-      const writable = await handle.createWritable()
-      await writable.write(blob)
-      await writable.close()
-      showToast('已保存到本地', 'success')
-    } else {
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-      showToast('处理完成，请查看下载内容', 'info')
-    }
-  } catch (err: any) {
-    if (err.name !== 'AbortError') {
-      showToast('保存失败，请点击下载按钮手动保存', 'error')
-    }
-  }
+function autoSave(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 </script>
