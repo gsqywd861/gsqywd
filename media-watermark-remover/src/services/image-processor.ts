@@ -1,4 +1,4 @@
-let cvReady = false
+export let cvReady = false
 let cvPromise: Promise<void> | null = null
 
 const OPENCV_CDN_URLS = [
@@ -26,34 +26,51 @@ export function loadOpenCV(): Promise<void> {
       script.src = url
       script.async = true
       
+      let settled = false
+      
       script.onload = () => {
         const checkCv = () => {
+          if (settled) return
           const cv = (window as any).cv
           if (cv && cv.Mat && typeof cv.inpaint === 'function') {
             cvReady = true
+            settled = true
             resolve()
           } else if (cv?.onRuntimeInitialized) {
             cv.onRuntimeInitialized = () => {
               setTimeout(() => {
-                if (cv.Mat && typeof cv.inpaint === 'function') {
+                if (settled) return
+                const cv2 = (window as any).cv
+                if (cv2 && cv2.Mat && typeof cv2.inpaint === 'function') {
                   cvReady = true
+                  settled = true
+                  resolve()
+                } else if (cv2?.Mat) {
+                  // Mat exists but no inpaint - resolve anyway (fallback will handle it)
+                  cvReady = true
+                  settled = true
                   resolve()
                 } else {
-                  reject(new Error('OpenCV.js inpaint 模块不可用'))
+                  setTimeout(checkCv, 200)
                 }
-              }, 1000)
+              }, 2000)
             }
           } else if (cv?.Mat) {
-            // cv exists but no inpaint - might need more time
             setTimeout(() => {
-              if (cv.Mat && typeof cv.inpaint === 'function') {
+              if (settled) return
+              const cv2 = (window as any).cv
+              if (cv2 && cv2.Mat && typeof cv2.inpaint === 'function') {
                 cvReady = true
+                settled = true
+                resolve()
+              } else if (cv2?.Mat) {
+                cvReady = true
+                settled = true
                 resolve()
               } else {
-                cvReady = true
-                resolve() // Still resolve, we have fallback
+                setTimeout(checkCv, 200)
               }
-            }, 500)
+            }, 1000)
           } else {
             setTimeout(checkCv, 100)
           }
@@ -62,9 +79,24 @@ export function loadOpenCV(): Promise<void> {
       }
       
       script.onerror = () => {
+        if (settled) return
         console.warn(`OpenCV CDN ${index} failed, trying next...`)
         tryLoadUrl(index + 1).then(resolve, reject)
       }
+      
+      // Timeout after 30s
+      setTimeout(() => {
+        if (!settled) {
+          const cv = (window as any).cv
+          if (cv?.Mat) {
+            cvReady = true
+            settled = true
+            resolve()
+          } else {
+            reject(new Error('OpenCV.js 加载超时'))
+          }
+        }
+      }, 30000)
       
       document.head.appendChild(script)
     })
@@ -86,12 +118,11 @@ export async function removeWatermarkTraditional(
 ): Promise<ImageData> {
   const cv = getCv()
   
-  // Check if inpaint is available (some CDN builds don't include it)
   if (typeof cv.inpaint === 'function') {
     return inpaintWithOpenCV(cv, imageData, maskData, method)
   }
   
-  // Fallback: manual inpaint using pixel diffusion
+  // Fallback: manual inpaint
   console.warn('cv.inpaint not available, using fallback algorithm')
   return inpaintFallback(imageData, maskData)
 }
@@ -123,18 +154,23 @@ function inpaintFallback(imageData: ImageData, maskData: ImageData): Promise<Ima
   const height = imageData.height
   const src = imageData.data
   const mask = maskData.data
-  const result = new Uint8ClampedArray(src)
   
-  // Build mask array (true = needs inpainting)
+  // Build mask array
   const needsInpaint = new Uint8Array(width * height)
   for (let i = 0; i < width * height; i++) {
     needsInpaint[i] = mask[i * 4] > 0 ? 1 : 0
   }
   
-  // Multi-pass pixel diffusion from edges inward
-  const maxPasses = 80
+  // Start with a copy of original
+  const result = new Uint8ClampedArray(src)
+  
+  // Multi-pass diffusion: each pass reads from current result
+  const maxPasses = 120
   for (let pass = 0; pass < maxPasses; pass++) {
     let changed = false
+    
+    // Make a snapshot for this pass (read from current, write to new)
+    const next = new Uint8ClampedArray(result)
     
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -143,21 +179,23 @@ function inpaintFallback(imageData: ImageData, maskData: ImageData): Promise<Ima
         
         let rSum = 0, gSum = 0, bSum = 0, wSum = 0
         
-        for (let dy = -2; dy <= 2; dy++) {
-          for (let dx = -2; dx <= 2; dx++) {
+        // Check neighbors in radius 3
+        for (let dy = -3; dy <= 3; dy++) {
+          for (let dx = -3; dx <= 3; dx++) {
             if (dx === 0 && dy === 0) continue
             const nx = x + dx
             const ny = y + dy
             if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue
             
             const nIdx = ny * width + nx
+            // Only use non-masked pixels as source
             if (!needsInpaint[nIdx]) {
               const dist = Math.sqrt(dx * dx + dy * dy)
-              const weight = 1 / (dist * dist)
-              const srcIdx = nIdx * 4
-              rSum += src[srcIdx] * weight
-              gSum += src[srcIdx + 1] * weight
-              bSum += src[srcIdx + 2] * weight
+              const weight = 1 / (dist * dist * dist)
+              const pIdx = nIdx * 4
+              rSum += result[pIdx] * weight
+              gSum += result[pIdx + 1] * weight
+              bSum += result[pIdx + 2] * weight
               wSum += weight
             }
           }
@@ -165,45 +203,21 @@ function inpaintFallback(imageData: ImageData, maskData: ImageData): Promise<Ima
         
         if (wSum > 0) {
           const pIdx = idx * 4
-          result[pIdx] = Math.round(rSum / wSum)
-          result[pIdx + 1] = Math.round(gSum / wSum)
-          result[pIdx + 2] = Math.round(bSum / wSum)
-          result[pIdx + 3] = 255
+          next[pIdx] = Math.round(rSum / wSum)
+          next[pIdx + 1] = Math.round(gSum / wSum)
+          next[pIdx + 2] = Math.round(bSum / wSum)
+          next[pIdx + 3] = 255
           changed = true
         }
       }
     }
     
+    // Apply changes
+    result.set(next)
     if (!changed) break
   }
   
-  // Simple box blur on inpainted region for smoother result
-  const blurred = new Uint8ClampedArray(result)
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const idx = y * width + x
-      if (!needsInpaint[idx]) continue
-      
-      let rSum = 0, gSum = 0, bSum = 0, count = 0
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nIdx = (y + dy) * width + (x + dx)
-          const pIdx = nIdx * 4
-          rSum += result[pIdx]
-          gSum += result[pIdx + 1]
-          bSum += result[pIdx + 2]
-          count++
-        }
-      }
-      
-      const pIdx = idx * 4
-      blurred[pIdx] = Math.round(rSum / count)
-      blurred[pIdx + 1] = Math.round(gSum / count)
-      blurred[pIdx + 2] = Math.round(bSum / count)
-    }
-  }
-  
-  return Promise.resolve(new ImageData(blurred, width, height))
+  return Promise.resolve(new ImageData(result, width, height))
 }
 
 export async function compressImage(

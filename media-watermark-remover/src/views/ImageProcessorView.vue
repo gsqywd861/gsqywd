@@ -327,6 +327,7 @@ import FileUploader from '@/components/common/FileUploader.vue'
 import WatermarkSelector from '@/components/common/WatermarkSelector.vue'
 import BeforeAfterSlider from '@/components/common/BeforeAfterSlider.vue'
 import { loadOpenCV, removeWatermarkTraditional, compressImage, enhanceSharpness } from '@/services/image-processor'
+import { getCv, cvReady } from '@/services/image-processor'
 import { initAIModel, inpaintAI } from '@/services/ai-processor'
 import { formatFileSize } from '@/utils/helpers'
 import { showToast } from '@/composables/useToast'
@@ -604,10 +605,22 @@ async function processWatermark() {
     
     let result: ImageData
     if (watermarkSettings.value.algorithm === 'ai' && hasWebGPU.value) {
-      const aiReady = await initAIModel()
-      if (!aiReady) throw new Error('AI 模型初始化失败，请切换至传统算法')
-      result = await inpaintAI(imageData, maskData)
+      try {
+        const aiReady = await initAIModel()
+        if (aiReady) {
+          result = await inpaintAI(imageData, maskData)
+        } else {
+          showToast('AI 模型初始化失败，自动切换到传统算法', 'warning')
+          if (!cvReady) await loadOpenCV()
+          result = await removeWatermarkTraditional(imageData, maskData, watermarkSettings.value.method)
+        }
+      } catch (aiErr) {
+        showToast('AI 处理失败，切换到传统算法', 'warning')
+        if (!cvReady) await loadOpenCV()
+        result = await removeWatermarkTraditional(imageData, maskData, watermarkSettings.value.method)
+      }
     } else {
+      if (!cvReady) await loadOpenCV()
       result = await removeWatermarkTraditional(
         imageData,
         maskData,

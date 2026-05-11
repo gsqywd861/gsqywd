@@ -83,6 +83,10 @@ export interface VideoProcessParams {
   watermarkRegions: Array<{ x: number; y: number; width: number; height: number }>
   outputResolution: 'original' | '1080p' | '720p' | '480p'
   outputQuality: 'high' | 'medium' | 'low'
+  startTime?: number
+  endTime?: number
+  algorithm?: 'traditional' | 'ai'
+  method?: 'telea' | 'ns'
 }
 
 export async function processVideo(
@@ -90,57 +94,190 @@ export async function processVideo(
   params: VideoProcessParams,
   onProgress?: (progress: number) => void
 ): Promise<Blob> {
-  const ffmpeg = await initFFmpeg()
+  const video = document.createElement('video')
+  video.src = URL.createObjectURL(file)
+  video.muted = true
   
-  const inputName = 'input.mp4'
-  const outputName = 'output.mp4'
+  await new Promise<void>((resolve, reject) => {
+    video.onloadedmetadata = () => resolve()
+    video.onerror = () => reject(new Error('无法加载视频'))
+  })
   
-  await ffmpeg.writeFile(inputName, await fetchFile(file))
+  const vw = video.videoWidth
+  const vh = video.videoHeight
+  const duration = video.duration
   
-  onProgress?.(10)
+  const startTime = params.startTime ?? 0
+  const endTime = Math.min(params.endTime ?? duration, duration)
+  const totalDuration = endTime - startTime
   
-  const qualityMap = {
-    high: '18',
-    medium: '23',
-    low: '28'
+  if (totalDuration <= 0) {
+    throw new Error('无效的时间范围')
   }
   
-  const resolutionMap = {
-    original: '',
-    '1080p': '-vf scale=-1:1080',
-    '720p': '-vf scale=-1:720',
-    '480p': '-vf scale=-1:480'
+  // Determine output resolution
+  let outW = vw, outH = vh
+  if (params.outputResolution !== 'original') {
+    const targetH = { '1080p': 1080, '720p': 720, '480p': 480 }[params.outputResolution] ?? vh
+    if (vh > targetH) {
+      outH = targetH
+      outW = Math.round(vw * (targetH / vh))
+    }
+  }
+  outW = outW % 2 === 0 ? outW : outW - 1
+  outH = outH % 2 === 0 ? outH : outH - 1
+  
+  const qualityMap = { high: 8000000, medium: 4000000, low: 1500000 }
+  const targetBitrate = qualityMap[params.outputQuality] ?? 4000000
+  
+  // Setup canvas and recorder
+  const canvas = document.createElement('canvas')
+  canvas.width = outW
+  canvas.height = outH
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  
+  const stream = canvas.captureStream(30)
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+    ? 'video/webm;codecs=vp9'
+    : 'video/webm'
+  
+  const chunks: Blob[] = []
+  const recorder = new MediaRecorder(stream, {
+    mimeType,
+    videoBitsPerSecond: targetBitrate
+  })
+  
+  recorder.ondataavailable = (e) => {
+    if (e.data.size > 0) chunks.push(e.data)
   }
   
-  const crf = qualityMap[params.outputQuality]
-  const scaleFilter = resolutionMap[params.outputResolution]
+  // Build mask
+  const maskCanvas = document.createElement('canvas')
+  maskCanvas.width = outW
+  maskCanvas.height = outH
+  const maskCtx = maskCanvas.getContext('2d')!
+  const scaleX = outW / vw
+  const scaleY = outH / vh
   
-  const args = [
-    '-i', inputName,
-    '-c:v', 'libx264',
-    '-crf', crf,
-    '-preset', 'medium',
-    '-c:a', 'aac',
-    '-b:a', '128k',
-    '-movflags', '+faststart',
-    '-y',
-    outputName
-  ]
-  
-  if (scaleFilter) {
-    args.splice(3, 0, ...scaleFilter.split(' '))
+  for (const region of params.watermarkRegions) {
+    const rx = Math.round(region.x * scaleX)
+    const ry = Math.round(region.y * scaleY)
+    const rw = Math.round(region.width * scaleX)
+    const rh = Math.round(region.height * scaleY)
+    maskCtx.fillStyle = 'white'
+    maskCtx.fillRect(rx, ry, rw, rh)
   }
   
-  onProgress?.(20)
+  const maskImageData = maskCtx.getImageData(0, 0, outW, outH)
+  const needsInpaint = new Uint8Array(outW * outH)
+  for (let i = 0; i < outW * outH; i++) {
+    needsInpaint[i] = maskImageData.data[i * 4] > 0 ? 1 : 0
+  }
   
-  await ffmpeg.exec(args)
+  // Has watermark?
+  const hasWatermark = needsInpaint.some(v => v === 1)
   
-  onProgress?.(80)
+  await new Promise<void>((resolve, reject) => {
+    recorder.onstop = () => resolve()
+    video.onerror = () => reject(new Error('视频播放出错'))
+    
+    recorder.start(50)
+    video.currentTime = startTime
+    
+    video.onseeked = function onSeeked() {
+      video.onseeked = null
+      
+      let lastTime = 0
+      const frameInterval = 1 / 30
+      
+      function processFrame() {
+        if (video.paused || video.ended || video.currentTime >= endTime) {
+          video.pause()
+          setTimeout(() => recorder.stop(), 100)
+          return
+        }
+        
+        const now = performance.now()
+        if (now - lastTime >= frameInterval * 1000) {
+          ctx.drawImage(video, 0, 0, outW, outH)
+          
+          if (hasWatermark) {
+            const frameData = ctx.getImageData(0, 0, outW, outH)
+            inpaintFrameFast(frameData, needsInpaint, outW, outH)
+            ctx.putImageData(frameData, 0, 0)
+          }
+          
+          lastTime = now
+          const elapsed = video.currentTime - startTime
+          const progress = Math.min(100, (elapsed / totalDuration) * 100)
+          onProgress?.(Math.round(progress))
+        }
+        
+        requestAnimationFrame(processFrame)
+      }
+      
+      video.play()
+      processFrame()
+    }
+  })
   
-  const data = await ffmpeg.readFile(outputName) as Uint8Array
+  URL.revokeObjectURL(video.src)
   
-  onProgress?.(100)
+  const blob = new Blob(chunks, { type: 'video/webm' })
+  return blob
+}
+
+function inpaintFrameFast(
+  imageData: ImageData,
+  needsInpaint: Uint8Array,
+  width: number,
+  height: number
+): void {
+  const data = imageData.data
   
-  const buffer = data.buffer instanceof SharedArrayBuffer ? (data.buffer.slice(0) as unknown as ArrayBuffer) : data.buffer
-  return new Blob([buffer], { type: 'video/mp4' })
+  // Multi-pass diffusion with radius 3
+  const maxPasses = 50
+  for (let pass = 0; pass < maxPasses; pass++) {
+    let changed = false
+    const snapshot = new Uint8ClampedArray(data)
+    
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x
+        if (!needsInpaint[idx]) continue
+        
+        let rSum = 0, gSum = 0, bSum = 0, wSum = 0
+        
+        for (let dy = -3; dy <= 3; dy++) {
+          for (let dx = -3; dx <= 3; dx++) {
+            if (dx === 0 && dy === 0) continue
+            const nx = x + dx
+            const ny = y + dy
+            if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue
+            
+            const nIdx = ny * width + nx
+            if (!needsInpaint[nIdx]) {
+              const dist = dx * dx + dy * dy
+              const weight = 1 / (dist * Math.sqrt(dist))
+              const pIdx = nIdx * 4
+              rSum += snapshot[pIdx] * weight
+              gSum += snapshot[pIdx + 1] * weight
+              bSum += snapshot[pIdx + 2] * weight
+              wSum += weight
+            }
+          }
+        }
+        
+        if (wSum > 0) {
+          const pIdx = idx * 4
+          data[pIdx] = Math.round(rSum / wSum)
+          data[pIdx + 1] = Math.round(gSum / wSum)
+          data[pIdx + 2] = Math.round(bSum / wSum)
+          changed = true
+        }
+      }
+    }
+    
+    if (!changed) break
+  }
 }
