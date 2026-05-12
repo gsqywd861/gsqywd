@@ -227,6 +227,153 @@ export async function processVideo(
   return blob
 }
 
+// 新增：使用 FFmpeg 编码视频，支持 MP4 输出
+export async function processVideoWithFFmpeg(
+  file: File,
+  params: VideoProcessParams,
+  outputFormat: 'mp4' | 'webm' = 'mp4',
+  onProgress?: (progress: number) => void
+): Promise<Blob> {
+  const ffmpeg = await initFFmpeg()
+  
+  const video = document.createElement('video')
+  video.src = URL.createObjectURL(file)
+  video.muted = true
+  
+  await new Promise<void>((resolve, reject) => {
+    video.onloadedmetadata = () => resolve()
+    video.onerror = () => reject(new Error('无法加载视频'))
+  })
+  
+  const vw = video.videoWidth
+  const vh = video.videoHeight
+  const duration = video.duration
+  
+  const startTime = params.startTime ?? 0
+  const endTime = Math.min(params.endTime ?? duration, duration)
+  const totalDuration = endTime - startTime
+  
+  if (totalDuration <= 0) {
+    throw new Error('无效的时间范围')
+  }
+  
+  // Determine output resolution
+  let outW = vw, outH = vh
+  if (params.outputResolution !== 'original') {
+    const targetH = { '1080p': 1080, '720p': 720, '480p': 480 }[params.outputResolution] ?? vh
+    if (vh > targetH) {
+      outH = targetH
+      outW = Math.round(vw * (targetH / vh))
+    }
+  }
+  outW = outW % 2 === 0 ? outW : outW - 1
+  outH = outH % 2 === 0 ? outH : outH - 1
+  
+  // Build mask
+  const maskCanvas = document.createElement('canvas')
+  maskCanvas.width = outW
+  maskCanvas.height = outH
+  const maskCtx = maskCanvas.getContext('2d')!
+  const scaleX = outW / vw
+  const scaleY = outH / vh
+  
+  for (const region of params.watermarkRegions) {
+    const rx = Math.round(region.x * scaleX)
+    const ry = Math.round(region.y * scaleY)
+    const rw = Math.round(region.width * scaleX)
+    const rh = Math.round(region.height * scaleY)
+    maskCtx.fillStyle = 'white'
+    maskCtx.fillRect(rx, ry, rw, rh)
+  }
+  
+  const maskImageData = maskCtx.getImageData(0, 0, outW, outH)
+  const needsInpaint = new Uint8Array(outW * outH)
+  for (let i = 0; i < outW * outH; i++) {
+    needsInpaint[i] = maskImageData.data[i * 4] > 0 ? 1 : 0
+  }
+  
+  const hasWatermark = needsInpaint.some(v => v === 1)
+  
+  // Extract frames and process
+  const fps = 30
+  const totalFrames = Math.floor(totalDuration * fps)
+  const frames: ImageData[] = []
+  
+  const canvas = document.createElement('canvas')
+  canvas.width = outW
+  canvas.height = outH
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+  
+  for (let i = 0; i < totalFrames; i++) {
+    const time = startTime + (i / fps)
+    video.currentTime = time
+    
+    await new Promise<void>((resolve) => {
+      video.onseeked = () => resolve()
+    })
+    
+    ctx.drawImage(video, 0, 0, outW, outH)
+    
+    if (hasWatermark) {
+      const frameData = ctx.getImageData(0, 0, outW, outH)
+      inpaintFrameFast(frameData, needsInpaint, outW, outH)
+      ctx.putImageData(frameData, 0, 0)
+    }
+    
+    frames.push(ctx.getImageData(0, 0, outW, outH))
+    
+    const progress = ((i + 1) / totalFrames) * 50
+    onProgress?.(Math.round(progress))
+  }
+  
+  URL.revokeObjectURL(video.src)
+  
+  // Write frames to FFmpeg
+  for (let i = 0; i < frames.length; i++) {
+    const frameCanvas = document.createElement('canvas')
+    frameCanvas.width = outW
+    frameCanvas.height = outH
+    const frameCtx = frameCanvas.getContext('2d')!
+    frameCtx.putImageData(frames[i], 0, 0)
+    
+    const blob = await new Promise<Blob>((resolve) => {
+      frameCanvas.toBlob((b) => resolve(b!), 'image/png')
+    })
+    
+    const buffer = await blob.arrayBuffer()
+    const uint8Array = new Uint8Array(buffer)
+    await ffmpeg.writeFile(`frame_${i.toString().padStart(5, '0')}.png`, uint8Array)
+    
+    const progress = 50 + ((i + 1) / frames.length) * 20
+    onProgress?.(Math.round(progress))
+  }
+  
+  // Encode video with FFmpeg
+  const codec = outputFormat === 'mp4' ? 'libx264' : 'libvpx-vp9'
+  const crf = { high: '18', medium: '23', low: '28' }[params.outputQuality] ?? '23'
+  const outputFile = outputFormat === 'mp4' ? 'output.mp4' : 'output.webm'
+  
+  await ffmpeg.exec([
+    '-framerate', fps.toString(),
+    '-i', 'frame_%05d.png',
+    '-c:v', codec,
+    '-pix_fmt', 'yuv420p',
+    '-crf', crf,
+    '-preset', 'fast',
+    outputFile
+  ])
+  
+  onProgress?.(90)
+  
+  // Read output file
+  const data = await ffmpeg.readFile(outputFile)
+  const blob = new Blob([data], { type: `video/${outputFormat}` })
+  
+  onProgress?.(100)
+  
+  return blob
+}
+
 function inpaintFrameFast(
   imageData: ImageData,
   needsInpaint: Uint8Array,

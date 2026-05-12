@@ -16,18 +16,29 @@ export default defineConfig({
     {
       name: 'remove-wasm',
       closeBundle: async () => {
-        const distDir = resolve(process.cwd(), 'dist/assets')
+        const distDir = resolve(process.cwd(), 'dist')
         try {
-          const { readdir } = await import('fs/promises')
-          const files = await readdir(distDir)
-          for (const file of files) {
-            if (file.includes('ort-wasm') || file.includes('.wasm')) {
-              await rm(resolve(distDir, file))
-              console.log(`[remove-wasm] Removed ${file}`)
+          const { readdir, stat } = await import('fs/promises')
+          const { join } = await import('path')
+          
+          async function removeWasmFiles(dir: string) {
+            const files = await readdir(dir)
+            for (const file of files) {
+              const filePath = join(dir, file)
+              const stats = await stat(filePath)
+              
+              if (stats.isDirectory()) {
+                await removeWasmFiles(filePath)
+              } else if (file.includes('.wasm') || file.includes('ort-wasm')) {
+                await rm(filePath)
+                console.log(`[remove-wasm] Removed ${file}`)
+              }
             }
           }
+          
+          await removeWasmFiles(distDir)
         } catch (e) {
-          // ignore
+          console.log('[remove-wasm] Error:', e)
         }
       },
     },

@@ -164,8 +164,20 @@ function inpaintFallback(imageData: ImageData, maskData: ImageData): Promise<Ima
   // Start with a copy of original
   const result = new Uint8ClampedArray(src)
   
+  // Precompute weights for radius 3 (48 neighbors, excluding center)
+  const weights = new Float32Array(48)
+  let idx = 0
+  for (let dy = -3; dy <= 3; dy++) {
+    for (let dx = -3; dx <= 3; dx++) {
+      if (dx === 0 && dy === 0) continue
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      weights[idx] = 1 / (dist * dist * dist)
+      idx++
+    }
+  }
+  
   // Multi-pass diffusion: each pass reads from current result
-  const maxPasses = 120
+  const maxPasses = 60
   for (let pass = 0; pass < maxPasses; pass++) {
     let changed = false
     
@@ -178,6 +190,7 @@ function inpaintFallback(imageData: ImageData, maskData: ImageData): Promise<Ima
         if (!needsInpaint[idx]) continue
         
         let rSum = 0, gSum = 0, bSum = 0, wSum = 0
+        let weightIdx = 0
         
         // Check neighbors in radius 3
         for (let dy = -3; dy <= 3; dy++) {
@@ -190,14 +203,14 @@ function inpaintFallback(imageData: ImageData, maskData: ImageData): Promise<Ima
             const nIdx = ny * width + nx
             // Only use non-masked pixels as source
             if (!needsInpaint[nIdx]) {
-              const dist = Math.sqrt(dx * dx + dy * dy)
-              const weight = 1 / (dist * dist * dist)
+              const weight = weights[weightIdx]
               const pIdx = nIdx * 4
               rSum += result[pIdx] * weight
               gSum += result[pIdx + 1] * weight
               bSum += result[pIdx + 2] * weight
               wSum += weight
             }
+            weightIdx++
           }
         }
         
